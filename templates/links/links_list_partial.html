@@ -1,0 +1,6 @@
+{% for l in links %}
+  {% include "links/row_partial.html" %}
+{% endfor %}
+{% if not links %}
+  <div class="text-gray-500 text-sm px-4 py-2">Nessun link disponibile per la tua filiale.</div>
+{% endif %} 

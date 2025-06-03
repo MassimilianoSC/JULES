@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% import "components/card.html" as ui %}
+
+{% block content %}
+{% call ui.page_card() %}
+
+<h1 class="mb-10 text-center text-3xl font-bold text-slate-800">
+  Nuovo link
+</h1>
+
+<form action="/links/new" method="post" class="mx-auto grid max-w-lg gap-6">
+  <!-- Titolo -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="title">Titolo</label>
+    <input required name="title" id="title" type="text" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+
+  <!-- URL -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="url">URL</label>
+    <input required name="url" id="url" type="url" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+
+  <!-- Descrizione -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="description">Descrizione</label>
+    <textarea name="description" id="description" rows="3" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition"></textarea>
+  </div>
+
+  <!-- ░░ Destinatario ░░ -->
+  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+    {% include "components/branch_and_hire_selects.html" %}
+  </fieldset>
+
+  <!-- Evidenza in home -->
+  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+    <input type="checkbox" id="show_on_home" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+    Metti in evidenza sulla home
+  </label>
+  <div class="flex gap-4 justify-center pt-4">
+    <a href="/links" 
+       class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
+              text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+      Annulla
+    </a>
+    <button type="submit"
+            class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
+                   text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+      Salva
+    </button>
+  </div>
+</form>
+
+<div class="pb-40"></div>
+
+{% endcall %}
+{% endblock %} 

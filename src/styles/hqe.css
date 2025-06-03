@@ -1,0 +1,85 @@
+/* hqe.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+
+  /* Pulsante primario */
+  .btn-primary {
+    @apply bg-hq-blue text-white font-heading uppercase
+           px-6 py-2 rounded-lg tracking-wide
+           transition hover:bg-hq-blueLight focus:outline-none;
+  }
+
+  /* Pulsante outline */
+  .btn-outline {
+    @apply border-2 border-hq-blue text-hq-blue font-heading uppercase
+           px-6 py-2 rounded-lg transition
+           hover:bg-hq-blue hover:text-white;
+  }
+
+  /* Input di ricerca */
+  .search-input {
+    @apply w-full h-10 px-3 rounded-md border-2 border-hq-blueLight
+           placeholder-gray-500 focus:border-hq-blue focus:ring-hq-blue;
+  }
+
+  /* Modale generica */
+  .modal {
+    @apply bg-white rounded-xl p-8 max-w-lg shadow-lg mx-auto;
+  }
+  .modal-header {
+    @apply bg-hq-blue text-white rounded-t-xl py-3 px-6 font-heading;
+  }
+
+  .nav-link {
+    @apply font-heading uppercase tracking-wider hover:opacity-80 transition;
+  }
+
+  .btn-inverted {
+    @apply bg-hq-white text-hq-purple font-heading uppercase
+           px-6 py-2 rounded-lg tracking-wide shadow
+           transition hover:bg-gray-200 focus:outline-none;
+  }
+
+  /* Card con effetto vetro */
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-sm rounded-xl shadow-lg
+           border border-white/20 transition-all duration-300
+           hover:shadow-xl hover:scale-[1.02];
+  }
+
+  /* Navbar flottante */
+  .floating-nav {
+    @apply fixed top-0 left-0 right-0 z-50
+           bg-white/80 backdrop-blur-sm shadow-sm
+           border-b border-gray-200/50;
+  }
+
+  /* --- UNIFORM FORM UTILITY CLASSES --- */
+  .input {
+    @apply block w-full rounded-lg border border-slate-300 bg-white
+           px-4 py-2 text-sm focus:border-blue-600 focus:outline-none
+           focus:ring-2 focus:ring-blue-600;
+  }
+  .select {
+    @apply input appearance-none pr-10
+           bg-[url('/static/chevron.svg')] bg-no-repeat bg-right bg-origin-content;
+  }
+  .checkbox {
+    @apply h-5 w-5 rounded border-slate-300 text-blue-600
+           focus:ring-blue-600;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-lg bg-blue-600 px-8 py-2 font-medium text-white
+           shadow hover:bg-blue-700 focus:ring-2 focus:ring-blue-600;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-lg bg-slate-50 px-8 py-2 font-medium text-slate-700
+           hover:bg-slate-100 focus:ring-2 focus:ring-blue-600;
+  }
+  .label { @apply mb-1 block text-sm font-medium text-slate-700; }
+}

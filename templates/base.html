@@ -1,0 +1,189 @@
+{% set u = request.state.user %}
+
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="{{ url_for('static', path='css/hqe.bundle.css') }}" rel="stylesheet">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    // forza l'invio di cookie in tutti i request htmx
+    htmx.config.withCredentials = true;
+
+    // Debug HTMX
+    document.addEventListener('htmx:beforeRequest', function(evt) {
+      console.log('HTMX Request:', evt.detail);
+    });
+    document.addEventListener('htmx:afterRequest', function(evt) {
+      console.log('HTMX Response (generico):', evt.detail);
+      if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath === '/notifiche/inline') {
+        console.log('[HTMX Response SPECIFICO per /notifiche/inline]');
+        console.log('  XHR Status:', evt.detail.xhr.status);
+        console.log('  XHR ResponseText:', evt.detail.xhr.responseText);
+        console.log('  Target Element:', evt.detail.target);
+        console.log('  Failed:', evt.detail.failed);
+        console.log('  Successful:', evt.detail.successful);
+      }
+    });
+    document.addEventListener('htmx:error', function(evt) {
+      console.error('HTMX Error:', evt.detail);
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      document.body.addEventListener('closeModal', () => {
+        console.log('Close modal event triggered');
+        const modal = document.querySelector('.fixed.inset-0');
+        if (modal) {
+          modal.classList.add('hidden');
+        }
+      });
+    });
+  </script>
+  <!-- Alpine.js per i modali e x-cloak -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    [x-cloak]{ display:none !important; }
+    html, body { height: 100%; margin: 0; padding: 0; background: none !important; }
+    .font-montserrat { font-family: 'Montserrat', Arial, sans-serif; }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+  <title>{{ page_title or "HQ Engineering" }}</title>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+  <script src="{{ url_for('static', path='js/ui.js') }}"></script>
+</head>
+
+<body class="antialiased font-sans text-gray-800">
+
+  <!-- HEADER rimosso: ora la home è senza header classico, solo hamburger e logo nella pagina -->
+
+  {% block content %}{% endblock %}
+
+  <!-- Modal full-screen, inizialmente invisibile -->
+  <div id="modal-overlay"
+       class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto scroll-pt-10 scroll-pb-[5rem] p-4">
+    <div id="modal-body"
+         class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 max-h-[calc(100vh-12rem)] overflow-y-auto pb-32">
+         <!-- qui HTMX inietterà il form -->
+    </div>
+  </div>
+  <script>
+    // Chiudi modale cliccando fuori
+    document.getElementById('modal-overlay').addEventListener('click', e => {
+        if (e.target.id === 'modal-overlay') e.currentTarget.classList.add('hidden');
+    });
+    // Mostra modale ogni volta che #modal-body viene riempito da HTMX
+    document.body.addEventListener('htmx:afterSwap', e => {
+        if (e.detail.target.id === 'modal-body') {
+            document.getElementById('modal-overlay').classList.remove('hidden');
+        }
+    });
+  </script>
+
+  <!-- Barra di navigazione in basso, visibile su tutte le pagine -->
+  <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 shadow-2xl rounded-2xl border-t border-gray-100 max-w-5xl w-full flex justify-between items-center px-10 py-3 gap-8">
+      <div class="w-full flex justify-between items-center gap-8">
+          <a href="/" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Home: icona casa -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M9 21V9h6v12"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Home</span>
+          </a>
+          <a href="/messaggi" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Messaggi: icona busta -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Messaggi</span>
+          </a>
+          <a href="/documents" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Documenti: icona file-text Lucide -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Documenti</span>
+              {% if new_docs_count and new_docs_count > 0 %}
+                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_docs_count }}</span>
+              {% endif %}
+          </a>
+          <a href="/contatti" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Contatti: icona utente -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M16 16v1a4 4 0 0 1-8 0v-1"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Contatti</span>
+              {% if new_contacts_count and new_contacts_count > 0 %}
+                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_contacts_count }}</span>
+              {% endif %}
+          </a>
+          <a href="/news" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- News: icona campanella -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">News</span>
+              {% if new_news_count and new_news_count > 0 %}
+                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_news_count }}</span>
+              {% endif %}
+          </a>
+          {% if u %}
+          <a href="/links" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Link utili: icona catena Lucide -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 1 7.07 0l1.41 1.41a5 5 0 0 1-7.07 7.07l-1.41-1.41"/><path d="M14 11a5 5 0 0 0-7.07 0l-1.41 1.41a5 5 0 0 0 7.07 7.07l1.41-1.41"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Link</span>
+              {% set unread_link_count = 0 %}
+              {% if unread_counts is defined and unread_counts %}
+                {% set unread_link_count = unread_counts.get('link', 0) %}
+              {% endif %}
+              {% include "components/nav_links_badge.html" %}
+          </a>
+          {% endif %}
+          <a href="/tasks" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Tasks: icona check-square Lucide -->
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="9 11 12 14 17 9"/></svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Tasks</span>
+          </a>
+      </div>
+  </nav>
+
+  <!-- HAMBURGER MENU in alto a destra -->
+  <div x-data="{ open: false }" class="fixed top-6 right-6 z-50">
+    <button @click="open = !open" class="bg-white/80 rounded-full p-2 shadow-lg hover:bg-blue-100 focus:outline-none">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-blue-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+    <!-- Overlay menu -->
+    <div x-show="open" @click.away="open = false" class="fixed inset-0 bg-black/40 flex items-start justify-end z-50" x-cloak>
+      <div class="bg-white rounded-l-2xl shadow-2xl mt-0 w-64 p-6 h-full flex flex-col">
+        <button @click="open = false" class="self-end mb-4 text-gray-500 hover:text-blue-700">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        <nav class="flex flex-col gap-4 mt-4">
+          <a href="/me" class="text-blue-900 hover:text-blue-700 font-semibold">Profilo</a>
+          <a href="/me/password" class="text-blue-900 hover:text-blue-700 font-semibold">Cambia password</a>
+          <a href="/logout" class="text-blue-900 hover:text-blue-700 font-semibold">Logout</a>
+          <a href="https://www.hqe.it/" target="_blank" class="text-blue-900 hover:text-blue-700 font-semibold">Sito HQE</a>
+          {% if u and u.role == "admin" %}
+            <a href="/users" class="text-blue-900 hover:text-blue-700 font-semibold">Utenti</a>
+          {% endif %}
+        </nav>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTIFICHE INLINE (aggiornamento automatico) -->
+  {# RIMOSSO: barra gialla notifiche inline #}
+
+  <script>
+    window.showDelete = function (btn) {
+      Swal.fire({
+        title: 'Sei sicuro?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+      }).then(r => {
+        if (r.isConfirmed) btn.closest('form').requestSubmit();
+      });
+    };
+  </script>
+  <!-- RIMOSSO: WebSocket globale per notifiche e aggiornamenti real-time, ora gestito solo in ui.js -->
+</body>
+</html>

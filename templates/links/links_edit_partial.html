@@ -1,0 +1,53 @@
+<h1 class="mb-10 text-center text-3xl font-bold text-slate-800">
+  Modifica link
+</h1>
+<form hx-post="/links/{{ l._id }}/edit" hx-target="#link-{{ l._id }}" hx-swap="outerHTML" class="mx-auto grid max-w-lg gap-6">
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="title">Titolo</label>
+    <input required name="title" id="title" type="text" value="{{ l.title }}" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="url">URL</label>
+    <input required name="url" id="url" type="url" value="{{ l.url }}" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="description">Descrizione</label>
+    <textarea name="description" id="description" rows="3" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">{{ l.description }}</textarea>
+  </div>
+  {% set branch = l.branch %}
+  {% set employment_type = l.employment_type %}
+  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+    <div class="grid gap-2">
+      <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
+      <select id="branch" name="branch" required class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+        {% for b in branches %}
+          <option value="{{ b }}" {% if l.branch == b %}selected{% endif %}>{{ "Tutte" if b == "*" else b }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="grid gap-2">
+      <label for="employment_type" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+      <select id="employment_type" name="employment_type" required class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+        {% for et in employment_types %}
+          <option value="{{ et }}" {% if et in l.employment_type %}selected{% endif %}>
+            {{ "Tutte" if et == "*" else {
+              "TD": "Tempo Determinato",
+              "TI": "Tempo Indeterminato",
+              "AP": "Apprendistato",
+              "CO": "Collaborazione"
+            }[et] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  </fieldset>
+  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+    <input type="checkbox" id="show_on_home" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" {{ "checked" if l.show_on_home else "" }}>
+    Metti in evidenza sulla home
+  </label>
+  <div class="flex gap-4 justify-center pt-4">
+    <button type="button" onclick="closeModal()" class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">Annulla</button>
+    <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition">Salva</button>
+  </div>
+</form> 

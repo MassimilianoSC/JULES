@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Carica documento{% endblock %}
+{% block content %}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2 pb-40">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+
+    <h1 class="text-3xl font-semibold text-slate-800 text-center mb-8">
+      Carica documento
+    </h1>
+
+    <form action="/documents/upload"
+          method="post"
+          enctype="multipart/form-data"
+          class="mx-auto grid max-w-lg gap-6">
+
+      <!-- Titolo -->
+      <div class="grid gap-2">
+        <label for="title" class="text-sm font-medium text-slate-700">Titolo</label>
+        <input id="title" name="title" type="text" required
+               class="w-full rounded-lg border border-slate-300 px-4 py-2
+                      text-base text-slate-800 placeholder-slate-400
+                      focus:border-blue-500 focus:ring-blue-500 transition">
+      </div>
+
+      <!--  ░░ Destinatario ░░ -->
+      <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+        <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+
+        <!-- Filiale -->
+        <div class="grid gap-2">
+          <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
+          <select id="branch" name="branch"
+                  class="w-full rounded-lg border border-slate-300 px-4 py-2
+                         text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+            <option value="*">Tutte</option>
+            {% for b in branches %}
+              <option value="{{ b }}">{{ b }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- Tipologia Assunzione -->
+        <div class="grid gap-2">
+          <label for="employment" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+          <select id="employment" name="employment_type"
+                  class="w-full rounded-lg border border-slate-300 px-4 py-2
+                         text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+            <option value="*">Tutte</option>
+            {% for t in types %}
+              <option value="{{ t }}">{{ {
+                   "TD":"Tempo Determinato",
+                   "TI":"Tempo Indeterminato",
+                   "AP":"Apprendistato",
+                   "CO":"Collaborazione"
+                 }[t] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </fieldset>
+
+      <!-- Tag -->
+      <div class="grid gap-2">
+        <label for="tags" class="text-sm font-medium text-slate-700">Tag (virgola separati)</label>
+        <input id="tags" name="tags" type="text"
+               class="w-full rounded-lg border border-slate-300 px-4 py-2
+                      text-base text-slate-800 placeholder-slate-400
+                      focus:border-blue-500 focus:ring-blue-500 transition">
+      </div>
+
+      <!-- File -->
+      <div x-data="{ fileName: '' }" class="grid gap-2">
+        <label class="text-sm font-medium text-slate-700">File PDF</label>
+
+        <label for="fileUpload"
+               class="cursor-pointer inline-flex items-center gap-2 rounded-lg
+                      bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800
+                      shadow hover:bg-blue-200 transition w-max">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+               viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12"/>
+          </svg>
+          <span x-text="fileName || 'Scegli file'"></span>
+        </label>
+
+        <input id="fileUpload" type="file" name="file" accept="application/pdf" required
+               class="sr-only"
+               @change="fileName = $event.target.files[0]?.name">
+      </div>
+
+      <!-- Evidenza -->
+      <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="show_on_home"
+               class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+        Metti in evidenza sulla home
+      </label>
+
+      <!-- Azioni -->
+      <div class="flex gap-4 justify-center pt-4">
+        <a href="/documents"
+           class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
+                  text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+          Annulla
+        </a>
+
+        <button type="submit"
+                class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
+                       text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+          Carica documento
+        </button>
+      </div>
+
+    </form>
+
+  </div>
+</div>
+{% endblock %}

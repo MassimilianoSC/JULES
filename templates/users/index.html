@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+    <h1 class="text-3xl md:text-4xl font-bold text-blue-900 mb-8 text-center tracking-wide">
+      Gestione utenti
+    </h1>
+
+    {% if current_user.role == "admin" %}
+      <div class="flex justify-start mb-6">
+        <a href="{{ url_for('create_user_ui') }}"
+           class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2
+                  text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+          + Nuovo utente
+        </a>
+      </div>
+    {% endif %}
+
+    <form method="get" class="mb-4 flex flex-wrap gap-2">
+      <select name="field" class="border rounded-md px-2 py-1">
+        <option value="name" {% if field == "name" %}selected{% endif %}>Nome</option>
+        <option value="role" {% if field == "role" %}selected{% endif %}>Ruolo</option>
+        <option value="branch" {% if field == "branch" %}selected{% endif %}>Filiale</option>
+        <option value="employment_type" {% if field == "employment_type" %}selected{% endif %}>Tipologia</option>
+        <option value="bu" {% if field == "bu" %}selected{% endif %}>BU</option>
+        <option value="team" {% if field == "team" %}selected{% endif %}>Team</option>
+      </select>
+      <input type="text" name="q" value="{{ query }}" placeholder="Cerca…"
+             class="border rounded-md px-2 py-1 w-64">
+      <button class="px-3 py-1 bg-blue-700 text-white rounded-md">Cerca</button>
+      {% if query %}
+        <a href="/users" class="px-3 py-1 rounded-md border border-blue-700 text-blue-700 bg-white hover:bg-blue-50 transition">Reset</a>
+      {% endif %}
+    </form>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+      {% for u in users %}
+        {% include "users/card_partial.html" %}
+      {% endfor %}
+    </div>
+
+    {% if users|length == 0 %}
+      <p class="text-center text-slate-500 mt-8">Nessun utente presente.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

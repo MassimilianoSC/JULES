@@ -1,0 +1,62 @@
+<form hx-post="/news/{{ n._id }}/edit"
+      hx-target="#news-{{ n._id }}"
+      hx-swap="outerHTML"
+      class="grid gap-6">
+  <h2 class="text-xl font-semibold text-slate-900 mb-6">Modifica news</h2>
+
+  <!-- Titolo -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700">Titolo</label>
+    <input name="title" value="{{ n.title }}" required class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" />
+  </div>
+
+  <!-- ░░ Destinatario ░░ -->
+  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+    <!-- Tipologia assunzione -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+      <select name="employment_type" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+        <option value="*" {% if n.employment_type == "*" %}selected{% endif %}>Tutte</option>
+        <option value="TD" {% if n.employment_type == "TD" %}selected{% endif %}>Tempo Determinato</option>
+        <option value="TI" {% if n.employment_type == "TI" %}selected{% endif %}>Tempo Indeterminato</option>
+        <option value="AP" {% if n.employment_type == "AP" %}selected{% endif %}>Apprendistato</option>
+        <option value="CO" {% if n.employment_type == "CO" %}selected{% endif %}>Collaborazione</option>
+      </select>
+    </div>
+    <!-- Filiale -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Filiale</label>
+      <select name="branch" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" required>
+        <option value="*" {% if n.branch == "*" %}selected{% endif %}>Tutte</option>
+        <option value="HQE" {% if n.branch == "HQE" %}selected{% endif %}>HQE</option>
+        <option value="HQ ITALIA" {% if n.branch == "HQ ITALIA" %}selected{% endif %}>HQ ITALIA</option>
+        <option value="HQIA" {% if n.branch == "HQIA" %}selected{% endif %}>HQIA</option>
+      </select>
+    </div>
+  </fieldset>
+
+  <!-- Evidenza in home -->
+  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+    <input type="checkbox" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" {% if n.show_on_home %}checked{% endif %}>
+    Metti in evidenza sulla home
+  </label>
+
+  <!-- Contenuto -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700">Contenuto</label>
+    <textarea name="content" rows="6" required class="w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">{{ n.content }}</textarea>
+  </div>
+
+  <div class="flex gap-4 justify-center pt-4">
+    <button type="button"
+            onclick="document.getElementById('modal-overlay').classList.add('hidden')"
+            class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+      Annulla
+    </button>
+    <button type="submit"
+            class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+      Salva
+    </button>
+  </div>
+</form>

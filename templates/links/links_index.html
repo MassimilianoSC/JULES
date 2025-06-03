@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% import "components/crud_base.html" as crud %}
+{% import "links/links_row_partial.html" as row %}
+
+{% block content %}
+  {{ crud.crud_page(
+       "Link utili",
+       "/links/new",
+       "links-list",
+       row.link_row,          
+       links,
+       current_user
+  ) }}
+{% endblock %} 

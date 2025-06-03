@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Profilo{% endblock %}
+
+{% block content %}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+    <h1 class="text-3xl md:text-4xl font-bold text-blue-900 mb-8 text-center tracking-wide">
+      Profilo personale
+    </h1>
+
+    <!-- LAYOUT A COLONNA UNICA -->
+    <div class="flex flex-col items-center gap-10">
+      <!-- Avatar + Upload + Pulsanti -->
+      <section class="border border-slate-200 rounded-xl p-8 w-full max-w-md mx-auto">
+        {% set foto_url = '/media/foto/' ~ user._id|string ~ '.jpg?v=' ~ datetime.utcnow().timestamp() %}
+        <img src="{{ foto_url }}"
+             onerror="this.src='/static/img/avatar-default.png'"
+             alt="Foto profilo"
+             class="w-32 h-32 rounded-full shadow object-cover mx-auto mb-6">
+
+        <!-- Pulsanti upload ed elimina in riga -->
+        <div class="flex flex-row gap-3 w-full justify-center">
+          <!-- Form upload -->
+          <form action="/me/foto" method="post" enctype="multipart/form-data" class="flex flex-row gap-3 items-center">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <div x-data="{ fileName: '' }" class="flex flex-col gap-2">
+              <label for="fileUpload" class="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition w-max">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12"/></svg>
+                <span x-text="fileName || 'Scegli file'"></span>
+              </label>
+              <input id="fileUpload" type="file" name="file" accept="image/*" required class="sr-only" @change="fileName = $event.target.files[0]?.name" />
+            </div>
+            <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+              Carica
+            </button>
+          </form>
+          <!-- Form elimina -->
+          <form action="/me/foto/delete" method="post" class="flex items-center">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-6 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+              Elimina foto
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Card informative -->
+      <section class="border border-slate-200 rounded-xl p-8 w-full">
+        <h2 class="text-lg font-semibold text-slate-800 mb-4">Anagrafica</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Nome:</span>
+            <span class="text-slate-800">{{ user.name }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Data di nascita:</span>
+            <span class="text-slate-800">{{ user.birth_date or "—" }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Sesso:</span>
+            <span class="text-slate-800">{{ user.sex or "—" }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Cittadinanza:</span>
+            <span class="text-slate-800">{{ user.citizenship or "—" }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="border border-slate-200 rounded-xl p-8 w-full">
+        <h2 class="text-lg font-semibold text-slate-800 mb-4">Azienda</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Filiale:</span>
+            <span class="text-slate-800">{{ user.branch }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">BU:</span>
+            <span class="text-slate-800">{{ user.bu or "—" }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Team:</span>
+            <span class="text-slate-800">{{ user.team or "—" }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">Ruolo intranet:</span>
+            <span class="text-slate-800">{{ user.role }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="border border-slate-200 rounded-xl p-8 w-full">
+        <h2 class="text-lg font-semibold text-slate-800 mb-4">Credenziali</h2>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="font-medium text-blue-800 w-32">E‑mail di accesso:</span>
+            <span class="text-slate-800">{{ user.email }}</span>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-col sm:flex-row gap-3 justify-center items-center">
+          <a href="/me/password"
+             class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2
+                    text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
+            Cambia password
+          </a>
+
+          <a href="/contatti"
+             class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2
+                    text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
+            Vai ai contatti
+          </a>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

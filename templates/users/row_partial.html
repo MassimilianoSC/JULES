@@ -1,0 +1,49 @@
+<tr id="user-{{ u._id }}" class="odd:bg-white even:bg-slate-50 hover:bg-sky-50 transition">
+  <td class="px-4 py-3 text-sm text-slate-800">{{ u.name }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.email }}</td>
+  <td class="px-4 py-3 text-sm">
+    <span class="inline-block rounded-full
+                 {% if (u.role or 'staff')|lower == 'admin' %}
+                   bg-rose-100 text-rose-700
+                 {% else %}
+                   bg-blue-100 text-blue-800
+                 {% endif %}
+                 px-3 py-0.5 text-xs font-medium">
+      {{ (u.role|default('Staff'))|capitalize }}
+    </span>
+  </td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.branch }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.employment_type }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.bu or '-' }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.team or '-' }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700 whitespace-nowrap">{{ u.birth_date or '-' }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.sex or '-' }}</td>
+  <td class="px-4 py-3 text-sm text-slate-700">{{ u.citizenship or '-' }}</td>
+
+  {% if user.role == "admin" %}
+    <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+      <button 
+        hx-get="/users/{{ u._id }}/edit"
+        hx-target="#modal-body"
+        hx-swap="innerHTML"
+        class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5
+               text-xs font-medium text-blue-800 shadow hover:bg-blue-200 transition">
+        Modifica
+      </button>
+      <form
+        hx-delete="/users/{{ u._id }}"
+        hx-target="#user-{{ u._id }}"
+        hx-swap="delete"
+        style="display:inline">
+        <button type="button"
+                onclick="showDelete(this)"
+                class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-3 py-1.5
+                       text-xs font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+          Elimina
+        </button>
+      </form>
+    </td>
+  {% else %}
+    <td></td>
+  {% endif %}
+</tr>

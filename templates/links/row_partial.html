@@ -1,0 +1,40 @@
+<tr id="link-{{ l._id }}" class="border-b hover:bg-gray-50">
+  <td class="px-3 py-2">
+    <a href="{{ l.url }}" target="_blank"
+       class="text-blue-600 hover:underline">{{ l.title }}</a>
+  </td>
+  <td class="px-3 py-2 {% if user.role != 'admin' %}hidden md:table-cell{% endif %}">
+    {{ l.branch }}
+  </td>
+  <td class="px-3 py-2">
+    {% if l.tags and l.tags is iterable %}
+      {% for t in l.tags %}
+        <span class="inline-block text-xs px-2 py-1 rounded bg-gray-100 text-gray-700">{{ t }}</span>
+      {% endfor %}
+    {% else %}
+      —
+    {% endif %}
+  </td>
+  {% if user.role == 'admin' %}
+  <td class="px-3 py-2">
+    <div class="flex gap-2">
+      <button
+        hx-get="/links/{{ l._id }}/edit"
+        hx-target="#modal-body"
+        hx-swap="innerHTML"
+        class="inline-flex items-center px-3 py-1 text-sm font-medium bg-gray-100 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-200 transition">
+        Modifica
+      </button>
+      <button 
+        hx-delete="/links/{{ l._id }}" 
+        hx-target="closest tr" 
+        hx-swap="delete" 
+        hx-trigger="hxConfirm"
+        hx-on="click: showDelete(this)"
+        class="inline-flex items-center px-3 py-1 text-sm font-medium bg-gray-100 border border-gray-300 text-gray-700 rounded-md hover:bg-red-100 hover:text-red-700 transition">
+        Elimina
+      </button>
+    </div>
+  </td>
+  {% endif %}
+</tr>

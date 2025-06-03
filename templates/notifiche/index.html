@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="max-w-4xl mx-auto p-6">
+  <h1 class="text-2xl font-semibold mb-6">Notifiche</h1>
+
+  {% if notifiche %}
+    <div class="space-y-4">
+      {% for n in notifiche %}
+        <div id="notifica-{{ n._id }}"
+             class="p-4 rounded shadow border-l-4
+                    {% if n.tipo == 'news' %} border-purple-600
+                    {% elif n.tipo == 'documento' %} border-blue-600
+                    {% elif n.tipo == 'link' %} border-green-600
+                    {% elif n.tipo == 'contatto' %} border-yellow-600
+                    {% else %} border-gray-400 {% endif %}
+                    bg-white">
+
+          <div class="flex justify-between items-center">
+            <div>
+              <p class="text-sm text-gray-500">
+                Nuova {{ n.tipo }} per
+                <span class="font-medium">{{ n.branch }}</span>
+              </p>
+              <p class="text-lg font-semibold text-gray-800">{{ n.titolo }}</p>
+            </div>
+            <button
+            hx-post="/notifiche/{{ n._id|string }}/letta"
+              hx-target="#notifica-{{ n._id }}"
+              hx-swap="delete"
+              class="text-sm px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-gray-700">
+              Segna come letta
+            </button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="text-gray-600">Nessuna nuova notifica.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

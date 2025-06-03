@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Link utili{% endblock %}
+
+{% block content %}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2 pb-40">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+    <h1 class="text-2xl font-semibold mb-6">Link utili</h1>
+
+    {% if user.role == 'admin' %}
+      <div class="mb-4">
+        <a href="/links/new"
+           class="inline-flex items-center px-4 py-2 text-sm font-medium bg-blue-700 text-white rounded-md hover:bg-blue-800 transition">
+          + Nuovo link
+        </a>
+      </div>
+    {% endif %}
+
+    <form method="get" class="mb-4 flex flex-wrap gap-2">
+      <input type="text" name="q" value="{{ query }}" placeholder="Cerca…"
+             class="border rounded-md px-2 py-1 w-64">
+      <button class="px-3 py-1 bg-blue-700 text-white rounded-md">Cerca</button>
+      {% if query %}
+        <a href="/links" class="px-3 py-1 text-blue-700">Reset</a>
+      {% endif %}
+    </form>
+    <div class="pb-40"></div>
+
+    {% if links %}
+      <table class="w-full text-sm text-left border border-gray-200 max-w-full lg:max-w-4xl">
+        <thead class="bg-gray-100">
+          <tr class="text-left text-gray-600 border-b">
+            <th class="px-4 py-3 border-b">Titolo</th>
+            <th class="px-4 py-3 border-b {% if user.role != 'admin' %}hidden md:table-cell{% endif %}">Filiale</th>
+            <th class="px-4 py-3 border-b">Tag</th>
+            {% if user.role == 'admin' %}
+              <th class="px-4 py-3 border-b">Azioni</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody hx-swap-oob="true">
+          <div id="links-list">
+            {% include "links/links_list_partial.html" %}
+          </div>
+        </tbody>
+      </table>
+    {% else %}
+      <div class="text-gray-500 text-sm px-4 py-2">Nessun link disponibile per la tua filiale.</div>
+    {% endif %}
+
+    <!-- MODALE GENERICA -->
+    <div id="modal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50">
+      <div id="modal-body" class="bg-white p-6 rounded-md shadow-lg shadow-black/5 w-full max-w-lg">
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // WebSocket per aggiornamento real-time
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/notify');
+  ws.onopen = function() { console.log('[WS DEBUG] Connessione WebSocket aperta'); };
+  ws.onmessage = function(event) {
+    console.log('[WS DEBUG] Messaggio ricevuto:', event.data);
+    if (event.data === 'new_link') {
+      if (document.querySelector('#links-list')) {
+        console.log('[WS DEBUG] Aggiorno lista link');
+        htmx.ajax('GET', '/links', {target: '#links-list', swap: 'outerHTML'});
+      } else {
+        console.warn('[WS DEBUG] #links-list non trovato');
+      }
+      if (document.querySelector('#notifiche-inline')) {
+        console.log('[WS DEBUG] Aggiorno notifiche inline');
+        htmx.ajax('GET', '/notifiche/inline', {target: '#notifiche-inline', swap: 'outerHTML'});
+      } else {
+        console.warn('[WS DEBUG] #notifiche-inline non trovato');
+      }
+    }
+  };
+  ws.onerror = function(e) { console.error('[WS DEBUG] Errore WebSocket', e); };
+
+  // Segna tutte le notifiche di tipo 'link' come lette quando si entra nella pagina
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log("Eseguo fetch per segnare tutte le notifiche link come lette");
+    fetch('/notifiche/mark-read/link', {method: 'POST', credentials: 'include'})
+      .then(() => {
+        // Aggiorna notifiche inline e badge dopo aver segnato come lette
+        if (document.querySelector('#notifiche-inline')) {
+          htmx.ajax('GET', '/notifiche/inline', {target: '#notifiche-inline', swap: 'outerHTML'});
+        }
+        const linkBadgeContainer = document.getElementById('nav-links-badge-container');
+        if (linkBadgeContainer) {
+          htmx.trigger(linkBadgeContainer, 'refreshLinkBadge');
+        }
+      });
+  });
+</script>
+{% endblock %}

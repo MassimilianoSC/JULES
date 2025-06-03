@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "components/card.html" as ui %}
+
+{% block content %}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2 pb-40">
+  {% call ui.page_card() %}
+
+  <h1 class="mb-10 text-center text-3xl font-bold text-slate-800">
+    Nuovo contatto
+  </h1>
+
+  <form action="/contatti/new"
+        method="post"
+        enctype="multipart/form-data"
+        class="mx-auto grid max-w-lg gap-6">
+    <!-- Nome -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Nome</label>
+      <input name="name" type="text" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" required>
+    </div>
+    <!-- Filiale lavorativa -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Filiale</label>
+      <select name="work_branch" required
+              class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
+        <option value="">Seleziona filiale</option>
+        {% for b in branches %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+      </select>
+    </div>
+    <!-- Email -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Email</label>
+      <input name="email" type="email" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" required>
+    </div>
+    <!-- Telefono -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Telefono</label>
+      <input name="phone" type="tel" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+    </div>
+
+    <!-- BU -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">BU</label>
+      <input name="bu" type="text"
+             class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500">
+    </div>
+
+    <!-- Team -->
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-700">Team</label>
+      <input name="team" type="text"
+             class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500">
+    </div>
+
+    <!-- ░░ Destinatario ░░ -->
+    <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+      <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+
+      <!-- Filiale -->
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-700">Filiale</label>
+        <select name="branch" required
+                class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
+          <option value="*">Tutte</option>
+          {% for b in branches %}<option value="{{ b }}">{{ b }}</option>{% endfor %}
+        </select>
+      </div>
+
+      <!-- Tipologia assunzione -->
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+        <select name="employment_type"
+                class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
+          {% for t in hire_types %}<option value="{{ t.id }}">{{ t.label }}</option>{% endfor %}
+        </select>
+      </div>
+    </fieldset>
+
+    <!-- Evidenza in home -->
+    <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+      <input type="checkbox" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+      Metti in evidenza sulla home
+    </label>
+    <div class="flex gap-4 justify-center pt-4">
+      <a href="/contatti" 
+         class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
+                text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+        Annulla
+      </a>
+      <button type="submit"
+              class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
+                     text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+        Salva
+      </button>
+    </div>
+  </form>
+  <div class="pb-40"></div>
+  {% endcall %}
+</div>
+{% endblock %}
