@@ -1,0 +1,14 @@
+<ul class="space-y-6" id="news-list">
+  {% for n in news %}
+    <li class="border-b border-blue-100 pb-3 last:border-0 last:pb-0">
+      <div class="flex items-center justify-between">
+        <span class="font-semibold text-lg text-blue-900">{{ n.title }}</span>
+        <span class="text-xs text-blue-400 ml-2">{{ n.created_at.strftime('%d/%m/%Y') }}</span>
+      </div>
+      <div class="text-blue-700/90 mt-1 text-base">{{ n.content[:120] }}{% if n.content|length > 120 %}...{% endif %}</div>
+    </li>
+  {% endfor %}
+  {% if news|length == 0 %}
+    <li class="text-center text-blue-700/80 text-base py-6">Nessuna news disponibile al momento.</li>
+  {% endif %}
+</ul> 

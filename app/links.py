@@ -7,6 +7,7 @@ from bson import ObjectId
 from datetime import datetime
 from app.notifiche import crea_notifica
 from app.ws_broadcast import broadcast_message
+import asyncio
 
 links_router = APIRouter(tags=["links"])
 
@@ -67,7 +68,8 @@ async def create_link(
             "type": "new_notification",
             "data": {
                 "id": str(notifica["_id"]),
-                "message": f"È stato pubblicato un nuovo link: {notifica.get('titolo', '')}"
+                "message": f"È stato pubblicato un nuovo link: {notifica.get('titolo', '')}",
+                "tipo": "link"
             }
         }
         await broadcast_message(json.dumps(payload))
@@ -99,10 +101,9 @@ async def list_links(request: Request, current_user=Depends(get_current_user)):
                 },
                 {
                     "$or": [
-                        {"employment_type": {"$in": [employment_type, "*"]}},
-                        {"employment_type": employment_type},
-                        {"employment_type": "*"},
-                        {"employment_type": {"$exists": False}}
+                        {"employment_type": {"$elemMatch": {"$in": [employment_type, "*"]}}},
+                        {"employment_type": {"$exists": False}},
+                        {"employment_type": []}
                     ]
                 }
             ]
@@ -201,9 +202,15 @@ async def delete_link(request: Request, link_id: str, user=Depends(get_current_u
     # Broadcast WebSocket per aggiornamento real-time
     try:
         import json
+        # Recupera info link eliminato
+        link = await db.links.find_one({"_id": ObjectId(link_id)})
         payload = {
             "type": "remove_link",
-            "data": {"id": link_id}
+            "data": {
+                "id": link_id,
+                "title": link["title"] if link else None,
+                "branch": link["branch"] if link else None
+            }
         }
         await broadcast_message(json.dumps(payload))
     except Exception as e:
@@ -266,7 +273,12 @@ async def edit_link(request: Request, link_id: str, user=Depends(get_current_use
         import json
         payload = {
             "type": "update_link",
-            "data": {"id": link_id}
+            "data": {
+                "id": link_id,
+                "title": form_data.get("title"),
+                "branch": form_data.get("branch"),
+                "consequence": "Il link è stato modificato. I destinatari potrebbero essere cambiati."
+            }
         }
         await broadcast_message(json.dumps(payload))
     except Exception as e:

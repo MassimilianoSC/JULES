@@ -65,6 +65,18 @@ async def create_contact(
             {"$set": highlight_data},
             upsert=True
         )
+        # --- AGGIUNTA BROADCAST HIGHLIGHT ---
+        try:
+            import json
+            payload = {
+                "type": "update_contact_highlight",
+                "data": {"id": str(new_id)}
+            }
+            from app.ws_broadcast import broadcast_message
+            await broadcast_message(json.dumps(payload))
+        except Exception as e:
+            print("[WebSocket] Errore broadcast su update_contact_highlight:", e)
+        # --- FINE AGGIUNTA ---
     await crea_notifica(
         request=request,
         tipo="contatto",
@@ -73,6 +85,39 @@ async def create_contact(
         id_risorsa=str(new_id),
         employment_type=employment_type_list
     )
+    # --- AGGIUNTA BROADCAST NOTIFICA GENERICA (come per i link) ---
+    try:
+        import json
+        notifica = await db.notifiche.find_one({"id_risorsa": str(new_id), "tipo": "contatto"})
+        payload = {
+            "type": "new_notification",
+            "data": {
+                "id": str(notifica["_id"]),
+                "message": f"È stato aggiunto un nuovo contatto: {notifica.get('titolo', '')}",
+                "tipo": "contatto"
+            }
+        }
+        from app.ws_broadcast import broadcast_message
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su new_notification contatto:", e)
+    # --- FINE AGGIUNTA ---
+    # --- AGGIUNTA LOGICA WEBSOCKET ---
+    try:
+        import json
+        contact = await db.contatti.find_one({"_id": new_id})
+        payload = {
+            "type": "new_contact",
+            "data": {
+                "id": str(new_id),
+                "message": f"È stato aggiunto un nuovo contatto: {contact.get('name', '')}"
+            }
+        }
+        from app.ws_broadcast import broadcast_message
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su new_contact:", e)
+    # --- FINE AGGIUNTA ---
     return RedirectResponse("/contatti", status_code=303)
 
 @contatti_router.get("/contatti", response_class=HTMLResponse)
@@ -96,23 +141,24 @@ async def list_contacts(
                 },
                 {
                     "$or": [
-                        {"employment_type": {"$in": [employment_type, "*"]}},
-                        {"employment_type": employment_type},
-                        {"employment_type": "*"},
-                        {"employment_type": {"$exists": False}}
+                        {"employment_type": {"$elemMatch": {"$in": [employment_type, "*"]}}},
+                        {"employment_type": {"$exists": False}},
+                        {"employment_type": []}
                     ]
                 }
             ]
         }
     contacts = await db.contatti.find(mongo_filter).sort("created_at", -1).to_list(None)
-    return request.app.state.templates.TemplateResponse(
-        "contatti/contatti_index.html",
-        {
-            "request": request,
-            "contacts": contacts,
-            "current_user": current_user
-        }
-    )
+    if request.headers.get("HX-Request") == "true":
+        return request.app.state.templates.TemplateResponse(
+            "contatti/contatti_list_partial.html",
+            {"request": request, "contacts": contacts, "current_user": current_user}
+        )
+    else:
+        return request.app.state.templates.TemplateResponse(
+            "contatti/contatti_index.html",
+            {"request": request, "contacts": contacts, "current_user": current_user}
+        )
 
 @contatti_router.get(
     "/contatti/{contact_id}/edit",
@@ -151,8 +197,7 @@ async def edit_contact_form(
 
 @contatti_router.post(
     "/contatti/{contact_id}/edit",
-    response_class=HTMLResponse,
-    dependencies=[Depends(require_admin)]
+    response_class=HTMLResponse
 )
 async def edit_contact_submit(
     request: Request,
@@ -165,7 +210,8 @@ async def edit_contact_submit(
     bu: str = Form(None),
     team: str = Form(None),
     work_branch: str = Form(...),
-    show_on_home: str = Form(None)
+    show_on_home: str = Form(None),
+    user: dict = Depends(get_current_user)
 ):
     db = request.app.state.db
     employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
@@ -180,6 +226,7 @@ async def edit_contact_submit(
             "bu": bu.strip() if bu else None,
             "team": team.strip() if team else None,
             "work_branch": work_branch,
+            "show_on_home": bool(show_on_home)
         }}
     )
     # Elimino tutte le vecchie notifiche relative a questo contatto
@@ -194,12 +241,78 @@ async def edit_contact_submit(
         id_risorsa=str(contact_id),
         employment_type=employment_type_list
     )
+    print(f"[DEBUG] Nuova notifica creata per contatto {contact_id}")
+
+    # Ripristino invio messaggio WebSocket per toast (new_notification)
+    try:
+        import json
+        notifica = await db.notifiche.find_one({"id_risorsa": str(contact_id), "tipo": "contatto"})
+        payload = {
+            "type": "new_notification",
+            "data": {
+                "id": str(notifica["_id"]),
+                "message": f"È stato modificato un contatto: {notifica.get('titolo', '')}",
+                "tipo": "contatto"
+            }
+        }
+        from app.ws_broadcast import broadcast_message
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su new_notification contatto (edit):", e)
+
+    # --- AGGIORNAMENTO HOME_HIGHLIGHTS E BROADCAST HIGHLIGHT ---
+    if show_on_home:
+        highlight_data = {
+            "type": "contact",
+            "object_id": ObjectId(contact_id),
+            "title": name.strip(),
+            "created_at": datetime.utcnow(),
+            "branch": branch.strip(),
+            "employment_type": employment_type_list,
+            "email": email.strip(),
+            "phone": phone.strip() if phone else None,
+            "bu": bu.strip() if bu else None,
+            "team": team.strip() if team else None,
+            "work_branch": work_branch
+        }
+        await db.home_highlights.update_one(
+            {"type": "contact", "object_id": ObjectId(contact_id)},
+            {"$set": highlight_data},
+            upsert=True
+        )
+    else:
+        await db.home_highlights.delete_one({"type": "contact", "object_id": ObjectId(contact_id)})
+    # Broadcast WebSocket per aggiornamento highlights home
+    try:
+        import json
+        from app.ws_broadcast import broadcast_message
+        payload = {
+            "type": "update_contact_highlight",
+            "data": {"id": str(contact_id)}
+        }
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su update_contact_highlight:", e)
+
     updated = await db.contatti.find_one({"_id": ObjectId(contact_id)})
     resp = request.app.state.templates.TemplateResponse(
         "contatti/contatti_row_partial.html",
-        {"request": request, "contact": updated, "user": request.state.user}
+        {"request": request, "contact": updated, "current_user": user}
     )
-    resp.headers["HX-Trigger"] = "closeModal"
+    resp.headers["HX-Trigger"] = "closeModal,refreshContattiList"
+    
+    # Inviare un solo tipo di evento WebSocket
+    try:
+        import json
+        from app.ws_broadcast import broadcast_message
+        payload = {
+            "type": "update_contact",
+            "data": {"id": str(contact_id)}
+        }
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su update_contact:", e)
+    
     return resp
 
 @contatti_router.get("/contatti/new", response_class=HTMLResponse)
@@ -280,10 +393,10 @@ async def update_contact(
     c = await db.contatti.find_one({"_id": ObjectId(contact_id)})
     html = request.app.state.templates.TemplateResponse(
         "contatti/contatti_row_partial.html",
-        {"request": request, "contact": c, "user": current_user},
+        {"request": request, "contact": c, "current_user": current_user},
         status_code=200
     )
-    html.headers["HX-Trigger"] = "closeModal"
+    html.headers["HX-Trigger"] = "closeModal,refreshContattiList"
     return html
 
 @contatti_router.delete("/contatti/{contact_id}", status_code=200)
@@ -293,6 +406,56 @@ async def delete_contact(
     current_user: dict = Depends(get_current_user)
 ):
     db = request.app.state.db
+    # Ottieni il contatto prima di eliminarlo per avere le informazioni necessarie
+    contact = await db.contatti.find_one({"_id": ObjectId(contact_id)})
+    if not contact:
+        return PlainTextResponse("")
+        
     await db.contatti.delete_one({"_id": ObjectId(contact_id)})
     await db.home_highlights.delete_one({"type": "contact", "object_id": ObjectId(contact_id)})
+    
+    # Crea una notifica per l'eliminazione del contatto
+    await crea_notifica(
+        request=request,
+        tipo="contatto",
+        titolo=contact["name"],
+        branch=contact["branch"],
+        id_risorsa=str(contact_id),
+        employment_type=contact.get("employment_type")
+    )
+    
+    # Invia il messaggio WebSocket per la notifica
+    try:
+        import json
+        notifica = await db.notifiche.find_one({"id_risorsa": str(contact_id), "tipo": "contatto"})
+        payload = {
+            "type": "new_notification",
+            "data": {
+                "id": str(notifica["_id"]),
+                "message": f"È stato eliminato un contatto: {contact['name']}",
+                "tipo": "contatto"
+            }
+        }
+        await broadcast_message(json.dumps(payload))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su new_notification contatto (delete):", e)
+    
+    # Broadcast WebSocket per rimozione e aggiornamento highlights
+    try:
+        import json
+        from app.ws_broadcast import broadcast_message
+        payload = {
+            "type": "remove_contact",
+            "data": {"id": contact_id}
+        }
+        await broadcast_message(json.dumps(payload))
+        # Aggiorna highlights home
+        payload_highlight = {
+            "type": "update_contact_highlight",
+            "data": {"id": contact_id}
+        }
+        await broadcast_message(json.dumps(payload_highlight))
+    except Exception as e:
+        print("[WebSocket] Errore broadcast su remove_contact:", e)
+        
     return PlainTextResponse("")

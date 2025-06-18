@@ -57,43 +57,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // WebSocket per aggiornamento real-time
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/notify');
-  ws.onopen = function() { console.log('[WS DEBUG] Connessione WebSocket aperta'); };
-  ws.onmessage = function(event) {
-    console.log('[WS DEBUG] Messaggio ricevuto:', event.data);
-    if (event.data === 'new_link') {
-      if (document.querySelector('#links-list')) {
-        console.log('[WS DEBUG] Aggiorno lista link');
-        htmx.ajax('GET', '/links', {target: '#links-list', swap: 'outerHTML'});
-      } else {
-        console.warn('[WS DEBUG] #links-list non trovato');
-      }
-      if (document.querySelector('#notifiche-inline')) {
-        console.log('[WS DEBUG] Aggiorno notifiche inline');
-        htmx.ajax('GET', '/notifiche/inline', {target: '#notifiche-inline', swap: 'outerHTML'});
-      } else {
-        console.warn('[WS DEBUG] #notifiche-inline non trovato');
-      }
-    }
-  };
-  ws.onerror = function(e) { console.error('[WS DEBUG] Errore WebSocket', e); };
-
-  // Segna tutte le notifiche di tipo 'link' come lette quando si entra nella pagina
-  document.addEventListener('DOMContentLoaded', function() {
-    console.log("Eseguo fetch per segnare tutte le notifiche link come lette");
-    fetch('/notifiche/mark-read/link', {method: 'POST', credentials: 'include'})
-      .then(() => {
-        // Aggiorna notifiche inline e badge dopo aver segnato come lette
-        if (document.querySelector('#notifiche-inline')) {
-          htmx.ajax('GET', '/notifiche/inline', {target: '#notifiche-inline', swap: 'outerHTML'});
-        }
-        const linkBadgeContainer = document.getElementById('nav-links-badge-container');
-        if (linkBadgeContainer) {
-          htmx.trigger(linkBadgeContainer, 'refreshLinkBadge');
-        }
-      });
-  });
-</script>
+<!-- Rimosso script inline: la logica real-time è ora gestita solo da static/js/ui.js -->
 {% endblock %}

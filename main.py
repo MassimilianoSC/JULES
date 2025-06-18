@@ -2,12 +2,12 @@
 import os, secrets
 import logging
 from contextlib import asynccontextmanager
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Dict
 from datetime import date, datetime
 from bson import ObjectId    
 from app.news import news_router
 from app.links import links_router
-from app.documents import documents_router
+from app.documents import documents_router, BASE_DOCS_DIR
 from app.contatti import contatti_router
 from app.deps import require_admin, get_current_user           # updated import
 
@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 import motor.motor_asyncio
 from bson import ObjectId
 from passlib.hash import bcrypt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fastapi import (
     FastAPI, Request, Depends, HTTPException,
@@ -24,7 +24,7 @@ from fastapi import (
 )
 from fastapi.responses import (
     HTMLResponse, RedirectResponse,
-    FileResponse, Response
+    FileResponse, Response, JSONResponse
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -35,6 +35,8 @@ from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorClient
 from pathlib import Path
 from werkzeug.utils import secure_filename
 from pymongo.errors import DuplicateKeyError
+from markdown_it import MarkdownIt
+import bleach
 
 # --- LOGGING ---------------------------------------------------------
 
@@ -52,48 +54,40 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/intranet")
 
 limiter   = Limiter(key_func=get_remote_address)
 templates = Jinja2Templates(directory="templates")
-
-# Aggiungi datetime ai globals di Jinja
 templates.env.globals["datetime"] = datetime
 
+def markdown_filter(text):
+    md = MarkdownIt("commonmark", {"breaks": True, "html": False})
+    html = md.render(text or "")
+    safe_html = bleach.clean(
+        html,
+        tags=[
+            'a', 'abbr', 'acronym', 'b', 'blockquote', 'code', 'em', 'i', 'li', 'ol', 'strong', 'ul', 'p', 'pre', 'br', 'span', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+        ],
+        attributes={'a': ['href', 'title', 'target'], 'span': ['class']},
+        strip=True
+    )
+    return safe_html
 
+templates.env.filters["markdown"] = markdown_filter
+print("Filtri disponibili:", templates.env.filters.keys())
+
+# Costanti per i percorsi
+BASE_DOCS_DIR = Path("media/docs")   # cartella radice documenti
+FOTO_DIR = Path("media/foto")        # cartella radice foto profilo
+
+# Definizione lifespan
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
     app.state.db = client.get_default_database()
-    # Create unique index on email if it doesn't exist
     await app.state.db.users.create_index("email", unique=True)
     yield
     client.close()
 
+# Crea l'app e assegna templates
 app = FastAPI(lifespan=lifespan)
-
-app.state.templates = templates   # <-- nuova riga: templates disponibile in app.state
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    rid = secrets.token_hex(4)                # id breve della richiesta
-    logger.info("[%s] ➜ %s %s", rid, request.method, request.url.path)
-    try:
-        response = await call_next(request)
-    except Exception:
-        logger.exception("[%s] ✗ eccezione", rid)
-        raise
-    logger.info("[%s] ⇠ %s %s %s", rid,
-                response.status_code,
-                response.media_type or "",
-                response.headers.get("hx-trigger", "-"))
-    return response
-
-@app.middleware("http")
-async def inject_user(request: Request, call_next):
-    """Inietta l'utente in request.state se autenticato."""
-    uid = request.session.get("user_id")
-    if uid:
-        user = await request.app.state.db.users.find_one({"_id": ObjectId(uid)})
-        if user:
-            request.state.user = user
-    return await call_next(request)
+app.state.templates = templates
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/media", StaticFiles(directory="media"), name="media")  # 👈 AGGIUNGI QUESTA
@@ -145,6 +139,7 @@ class UserIn(BaseModel):
     birth_date: Optional[date] = None   # DATA DI NASCITA
     sex: Optional[Literal["M", "F"]] = None
     citizenship: Optional[str] = None
+    pinned_items: Optional[List[Dict[str, str]]] = Field(default_factory=list)  # [{type: "ai_news", id: "123"}, ...]
 
 class UserOut(UserIn):
     id: str
@@ -173,6 +168,9 @@ async def home(request: Request, user = Depends(get_current_user)):
     
     # Recupera gli highlights filtrati per branch e hire_type
     highlights = await db.home_highlights.find().to_list(length=None)
+    print("[DEBUG HOME] highlights trovati in home_highlights:")
+    for h in highlights:
+        print(f"  - {h}")
     filtered_highlights = []
     
     # Safe access to user properties with fallbacks
@@ -182,66 +180,41 @@ async def home(request: Request, user = Depends(get_current_user)):
     for h in highlights:
         if h["type"] == "document":
             doc = await db.documents.find_one({"_id": h["object_id"]})
-            if doc and (
-                doc.get("branch") in (branch_user, "*", "Tutte") or branch_user in (None, "*", "Tutte")
-            ) and (
-                emp_type_user is None or
-                "*" in doc.get("employment_type", ["*"]) or 
-                emp_type_user in doc.get("employment_type", ["*"]) or 
-                emp_type_user == "*"
-            ):
-                filtered_highlights.append({
-                    "type": "document",
-                    "id": str(doc["_id"]),
-                    "title": doc["title"],
-                    "filename": doc["filename"],
-                    "created_at": h["created_at"]
-                })
+            if not doc:
+                continue
+            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
+                filtered_highlights.append(h)
+        elif h["type"] == "ai_news":
+            doc = await db.ai_news.find_one({"_id": h["object_id"]})
+            if not doc:
+                continue
+            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
+                filtered_highlights.append(h)
+        elif h["type"] == "news":
+            news = await db.news.find_one({"_id": h["object_id"]})
+            if not news:
+                continue
+            if (h["branch"] in ("*", branch_user)) and ("*" in h.get("employment_type", ["*"]) or emp_type_user in h.get("employment_type", ["*"])):
+                filtered_highlights.append(h)
         elif h["type"] == "link":
             link = await db.links.find_one({"_id": h["object_id"]})
-            if link and (
-                link.get("branch") in (branch_user, "*", "Tutte") or branch_user in (None, "*", "Tutte")
-            ) and (
-                emp_type_user is None or
-                "*" in link.get("employment_type", ["*"]) or 
-                emp_type_user in link.get("employment_type", ["*"]) or 
-                emp_type_user == "*"
-            ):
-                filtered_highlights.append({
-                    "type": "link",
-                    "title": link["title"],
-                    "url": link["url"],
-                    "created_at": h["created_at"]
-                })
+            if not link:
+                continue
+            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
+                filtered_highlights.append(h)
         elif h["type"] == "contact":
             contact = await db.contatti.find_one({"_id": h["object_id"]})
-            if contact and (
-                contact.get("branch") in (branch_user, "*", "Tutte") or branch_user in (None, "*", "Tutte")
-            ) and (
-                emp_type_user is None or
-                "*" in contact.get("employment_type", ["*"]) or 
-                emp_type_user in contact.get("employment_type", ["*"]) or 
-                emp_type_user == "*"
-            ):
-                filtered_highlights.append({
-                    "type": "contact",
-                    "title": contact["name"],
-                    "branch": contact["branch"],
-                    "role": contact.get("role", ""),
-                    "employment_type": contact.get("employment_type", []),
-                    "created_at": h["created_at"],
-                    "email": contact.get("email", ""),
-                    "phone": contact.get("phone", ""),
-                    "bu": contact.get("bu", ""),
-                    "team": contact.get("team", ""),
-                    "work_branch": contact.get("work_branch", "")
-                })
-    
-    # Ordina gli highlights per data di creazione
+            if not contact:
+                continue
+            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
+                filtered_highlights.append(h)
     filtered_highlights.sort(key=lambda x: x["created_at"], reverse=True)
+    print("[DEBUG HOME] filtered_highlights finali:")
+    for fh in filtered_highlights:
+        print(f"  - {fh}")
 
-    # Recupera le ultime 3 news (senza filtri)
-    news = await db.news.find().sort("created_at", -1).limit(3).to_list(length=3)
+    # Recupera tutte le news (senza limiti)
+    news = await db.news.find().sort("created_at", -1).to_list(length=None)
     
     # --- Conteggio notifiche non lette di tipo documento ---
     user_id = str(user["_id"])
@@ -298,6 +271,9 @@ async def home(request: Request, user = Depends(get_current_user)):
     # PATCH: Valorizzo unread_counts per il badge, sempre presente
     unread_counts = {"link": new_links_count if 'new_links_count' in locals() else 0}
 
+    print("[DEBUG HOME] user._id:", user.get("_id"))
+    print("[DEBUG HOME] user.pinned_items:", user.get("pinned_items"))
+
     return request.app.state.templates.TemplateResponse(
         "home.html",
         {
@@ -313,6 +289,127 @@ async def home(request: Request, user = Depends(get_current_user)):
         }
     )
 
+@app.get("/home/highlights/partial", response_class=HTMLResponse)
+async def home_highlights_partial(request: Request, user = Depends(get_current_user)):
+    db = request.app.state.db
+    print(f"[REALTIME][HIGHLIGHTS] user_id={user.get('_id')}, branch={user.get('branch')}, employment_type={user.get('employment_type')}")
+    highlights = await db.home_highlights.find().to_list(length=None)
+    print(f"[REALTIME][HIGHLIGHTS] highlights in home_highlights: {[str(h) for h in highlights]}")
+    filtered_highlights = []
+    emp_type_user = user.get("employment_type")
+    branch_user = user.get("branch")
+    for h in highlights:
+        print(f"[LOG] PROCESSO highlight: {h}")
+        branch_h = h.get("branch", "*")
+        emp_type_h = h.get("employment_type", ["*"])
+        print(f"[LOG] Filtro highlight: branch_h={branch_h}, emp_type_h={emp_type_h}, branch_user={branch_user}, emp_type_user={emp_type_user}")
+        passa_filtro = (branch_h in (branch_user, "*", "Tutte") or branch_user in (None, "*", "Tutte")) and (
+            emp_type_user is None or
+            "*" in emp_type_h or 
+            emp_type_user in emp_type_h or 
+            emp_type_user == "*"
+        )
+        print(f"[LOG] Risultato filtro: {passa_filtro}")
+        if passa_filtro:
+            if h["type"] == "document":
+                doc = await db.documents.find_one({"_id": h["object_id"]})
+                print(f"[LOG] Documento associato: {doc}")
+                if not doc:
+                    continue
+                filtered_highlights.append({
+                    "type": "document",
+                    "id": str(doc["_id"]),
+                    "title": doc["title"],
+                    "filename": doc.get("filename", ""),
+                    "created_at": h["created_at"]
+                })
+            elif h["type"] == "ai_news":
+                doc = await db.ai_news.find_one({"_id": h["object_id"]})
+                print(f"[LOG] AI News associata: {doc}")
+                if not doc:
+                    continue
+                filtered_highlights.append({
+                    "type": "ai_news",
+                    "id": str(doc["_id"]),
+                    "title": doc["title"],
+                    "filename": doc.get("filename", ""),
+                    "external_url": doc.get("external_url", ""),
+                    "created_at": h["created_at"]
+                })
+            elif h["type"] == "link":
+                link = await db.links.find_one({"_id": h["object_id"]})
+                print(f"[LOG] Link associato: {link}")
+                if not link:
+                    continue
+                filtered_highlights.append({
+                    "type": "link",
+                    "id": str(link["_id"]),
+                    "title": link["title"],
+                    "url": link["url"],
+                    "created_at": h["created_at"]
+                })
+            elif h["type"] == "contact":
+                contact = await db.contatti.find_one({"_id": h["object_id"]})
+                print(f"[LOG] Contatto associato: {contact}")
+                if not contact:
+                    continue
+                filtered_highlights.append({
+                    "type": "contact",
+                    "id": str(contact["_id"]),
+                    "title": contact["name"],
+                    "branch": contact["branch"],
+                    "role": contact.get("role", ""),
+                    "employment_type": contact.get("employment_type", []),
+                    "created_at": h["created_at"],
+                    "email": contact.get("email", ""),
+                    "phone": contact.get("phone", ""),
+                    "bu": contact.get("bu", ""),
+                    "team": contact.get("team", ""),
+                    "work_branch": contact.get("work_branch", "")
+                })
+            elif h["type"] == "news":
+                news = await db.news.find_one({"_id": h["object_id"]})
+                print(f"[LOG] News associata: {news}")
+                if not news:
+                    continue
+                filtered_highlights.append({
+                    "type": "news",
+                    "id": str(news["_id"]),
+                    "title": news["title"],
+                    "created_at": h["created_at"],
+                    "branch": news.get("branch", ""),
+                    "employment_type": news.get("employment_type", []),
+                    "content": news.get("content", "")
+                })
+    print(f"[LOG] Lista finale filtered_highlights: {filtered_highlights}")
+    filtered_highlights.sort(key=lambda x: x["created_at"], reverse=True)
+    print("[DEBUG PARTIAL] Highlights restituiti:", filtered_highlights)
+    print("[DEBUG PARTIAL] user._id:", user.get("_id"))
+    print("[DEBUG PARTIAL] user.pinned_items:", user.get("pinned_items"))
+
+    # Aggiorna i pin direttamente dal DB utente per avere la lista aggiornata
+    user_db = await db.users.find_one({"_id": user["_id"]})
+    user["pinned_items"] = user_db.get("pinned_items", [])
+    print("[LOG][ULTIMO] Tutti gli highlights in home_highlights:", highlights)
+    print("[LOG][ULTIMO] Lista finale filtered_highlights:", filtered_highlights)
+    for h in highlights:
+        if h["type"] == "news":
+            news = await db.news.find_one({"_id": h["object_id"]})
+            print(f"[LOG][ULTIMO] News collegata a highlight {h.get('title', '')}: {news}")
+    return request.app.state.templates.TemplateResponse(
+        "partials/home_highlights.html",
+        {"request": request, "highlights": filtered_highlights, "user": user}
+    )
+
+@app.get("/home/news_ticker/partial", response_class=HTMLResponse)
+async def home_news_ticker_partial(request: Request, user=Depends(get_current_user)):
+    db = request.app.state.db
+    news = await db.news.find().to_list(length=None)
+    news = sorted(news, key=lambda x: x["created_at"], reverse=True)
+    return request.app.state.templates.TemplateResponse(
+        "partials/news_ticker.html",
+        {"request": request, "news": news, "user": user}
+    )
 
 # ---- AUTH ----
 @app.get("/login", response_class=HTMLResponse)
@@ -610,95 +707,52 @@ async def get_docs_coll(
 # ---- DOCUMENTI ------------------------------------------------------
 
 @app.get("/documents", response_class=HTMLResponse)
-async def documents_page(
+async def list_documents(
     request: Request,
-    docs_coll: AsyncIOMotorCollection = Depends(get_docs_coll),
-    q: str | None = Query(None, description="search text"),
-    tag: str | None = Query(None, description="tag filter"),
+    current_user = Depends(get_current_user)
 ):
-    user = request.state.user
     db = request.app.state.db
-    # filtro base per filiale e tipologia assunzione (se non admin)
-    mongo_filter = {} if user["role"] == "admin" else {
-        "$and": [
-            {
-                "$or": [
-                    {"branch": "*"},                # visibili a tutti
-                    {"branch": user["branch"]}      # visibili alla propria filiale
-                ]
-            },
-            {
-                "$or": [
-                    {"employment_type": {"$in": [user["employment_type"], "*"]}},  # caso lista
-                    {"employment_type": user["employment_type"]},                      # caso stringa
-                    {"employment_type": "*"}                                            # caso stringa "*"
-                ]
-            }
-        ]
-    }
+    employment_type = current_user.get("employment_type")
+    if current_user["role"] == "admin" or not employment_type:
+        mongo_filter = {}
+    else:
+        mongo_filter = {
+            "$and": [
+                {
+                    "$or": [
+                        {"branch": "*"},
+                        {"branch": current_user["branch"]}
+                    ]
+                },
+                {
+                    "$or": [
+                        {"employment_type": {"$in": [employment_type, "*"]}},
+                        {"employment_type": employment_type},
+                        {"employment_type": "*"}
+                    ]
+                }
+            ]
+        }
+    documents = await db.documents.find(mongo_filter).sort("uploaded_at", -1).to_list(None)
 
-    # filtro tag esatto
-    if tag:
-        mongo_filter["tags"] = tag
-
-    # filtro ricerca testo (titolo o tags)
-    if q:
-        regex = {"$regex": q, "$options": "i"}
-        text_filter = {"$or": [{"title": regex}, {"tags": regex}]}
-        mongo_filter = {"$and": [mongo_filter, text_filter]} if mongo_filter else text_filter
-
-    print("\n[DEBUG] Utente:", user)
-    print("[DEBUG] employment_type utente:", user.get("employment_type"), "branch utente:", user.get("branch"))
-
-    docs = await docs_coll.find(mongo_filter).to_list(length=None)
-    print(f"[DEBUG] Documenti trovati dal filtro: {len(docs)}")
-    for d in docs:
-        print(f"  - Titolo: {d.get('title')}, branch: {d.get('branch')}, employment_type: {d.get('employment_type')}")
-        # Debug: verifica se il documento dovrebbe essere visibile
-        doc_branch = d.get('branch')
-        doc_emp = d.get('employment_type')
-        user_branch = user.get('branch')
-        user_emp = user.get('employment_type')
-        branch_ok = doc_branch in (user_branch, "*", "Tutte") or user_branch in (None, "*", "Tutte")
-        emp_ok = (
-            user_emp is None or
-            (isinstance(doc_emp, list) and ("*" in doc_emp or user_emp in doc_emp)) or
-            (isinstance(doc_emp, str) and (doc_emp == user_emp or doc_emp == "*")) or
-            user_emp == "*"
-        )
-        if not (branch_ok and emp_ok):
-            print(f"    [ATTENZIONE] Questo documento NON dovrebbe essere visibile a questo utente!")
-
-    # --- Recupero id_risorsa delle notifiche non lette ---
-    user_id = str(user["_id"])
-    new_doc_notifiche = await db.notifiche.find({
-        "tipo": "documento",
-        "letta_da": {"$ne": user_id}
-    }).to_list(length=None)
-    new_doc_ids = [n["id_risorsa"] for n in new_doc_notifiche]
-
-    # --- Segna tutte le notifiche 'documento' come lette per l'utente ---
+    # PATCH: segna tutte le notifiche documento come lette per l'utente
+    user_id = str(current_user["_id"])
     result = await db.notifiche.update_many(
         {"tipo": "documento", "letta_da": {"$ne": user_id}},
         {"$push": {"letta_da": user_id}}
     )
-    print("Notifiche segnate come lette:", result.modified_count)
-
-    return templates.TemplateResponse(
+    resp = request.app.state.templates.TemplateResponse(
         "documents.html",
-        {"request": request,
-         "docs": docs,
-         "user": user,
-         "query": q or "",
-         "tag": tag or "",
-         "new_doc_ids": new_doc_ids}
+        {
+            "request": request,
+            "documents": documents,
+            "current_user": current_user
+        }
     )
-
-DOCS_DIR = Path("media/docs")   # cartella radice documenti
-DOCS_DIR.mkdir(parents=True, exist_ok=True)
-
-FOTO_DIR = Path("media/foto")   # cartella per le foto profilo
-FOTO_DIR.mkdir(parents=True, exist_ok=True)
+    import json
+    if result.modified_count > 0:
+        resp.headers["HX-Trigger"] = json.dumps({"refreshDocumentiBadgeEvent": "true"})
+    return resp
 
 # ---- UPLOAD (solo admin) -------------------------------------------
 
@@ -807,7 +861,7 @@ async def preview_document(
     if user["role"] != "admin" and doc["branch"] not in ("*", user["branch"]):
         raise HTTPException(403, "Non autorizzato")
 
-    filepath = DOCS_DIR / doc["filename"]
+    filepath = BASE_DOCS_DIR / doc["filename"]
     if not filepath.exists():
         raise HTTPException(404, "File mancante")
 
@@ -876,102 +930,11 @@ async def links_page(
 
 # ---- NUOVO LINK (solo admin) ---------------------------------------
 
-@app.get("/links/new", response_class=HTMLResponse,
-         dependencies=[Depends(require_admin)])
-async def new_link_form(request: Request):
-    return templates.TemplateResponse(
-        "links/new.html", {"request": request}
-    )
-
-
-@app.post("/links/new", dependencies=[Depends(require_admin)])
-async def new_link_submit(
-    request: Request,
-    title: str = Form(...),
-    url: str   = Form(...),
-    branch: str = Form("*"),
-    role: str   = Form("*"),          # "*" | "staff" | "admin"
-    order: int | None = Form(None),
-    tags: str | None = Form(None),
-    links_coll: AsyncIOMotorCollection = Depends(get_links_coll),
-):
-    doc = {
-        "title": title.strip(),
-        "url": url.strip(),
-        "branch": branch.strip(),
-        "role": role.strip().lower(),
-        "order": order or 0,
-        "tags": [t.strip() for t in tags.split(",")] if tags else [],
-    }
-    await links_coll.insert_one(doc)
-    return RedirectResponse("/links", status_code=303)
-
+# (RIMOSSO: tutte le route /links/* duplicate, ora gestite in app/links.py)
 
 # ---- EDIT / DELETE link ( solo admin ) ------------------------------
 
-@app.get("/links/{link_id}/edit", response_class=HTMLResponse,
-         dependencies=[Depends(require_admin)])
-async def edit_link_form(
-    request: Request,
-    link_id: str,
-    links_coll: AsyncIOMotorCollection = Depends(get_links_coll),
-):
-    link = await links_coll.find_one({"_id": ObjectId(link_id)})
-    if not link:
-        raise HTTPException(404, "Link non trovato")
-    return templates.TemplateResponse(
-        "links/edit_partial.html",
-        {"request": request, "l": link}
-    )
-
-
-@app.post("/links/{link_id}/edit", dependencies=[Depends(require_admin)])
-async def edit_link_submit(
-    request: Request,
-    link_id: str,
-    title: str = Form(...),
-    url: str   = Form(...),
-    branch: str = Form("*"),
-    role: str   = Form("*"),
-    order: int | None = Form(None),
-    tags: str | None = Form(None),
-    links_coll: AsyncIOMotorCollection = Depends(get_links_coll),
-    user = Depends(get_current_user) # Aggiunto per contesto template
-):
-    logger.info("LINK-EDIT start id=%s", link_id) # <-- Aggiunto log
-    update_data = {
-        "title": title.strip(),
-        "url": url.strip(),
-        "branch": branch.strip(),
-        "role": role.strip().lower(),
-        "order": order or 0,
-        "tags": [t.strip() for t in tags.split(",")] if tags else [],
-    }
-    await links_coll.update_one(
-        {"_id": ObjectId(link_id)},
-        {"$set": update_data}
-    )
-    updated = await links_coll.find_one({"_id": ObjectId(link_id)})
-    if not updated: # Gestione caso link non trovato dopo update (raro)
-        raise HTTPException(404, "Link non trovato dopo l'aggiornamento")
-
-    resp = templates.TemplateResponse(
-        "links/row_partial.html",
-        {"request": request, "l": updated, "user": user} # Passa user al template
-    )
-    resp.headers["HX-Trigger"] = "closeModal"
-    logger.info("LINK-EDIT done id=%s  (closeModal)", link_id) # <-- Aggiunto log
-    return resp
-
-
-@app.delete("/links/{link_id}", status_code=200,
-            dependencies=[Depends(require_admin)])
-async def delete_link(
-    link_id: str,
-    links_coll: AsyncIOMotorCollection = Depends(get_links_coll),
-):
-    await links_coll.delete_one({"_id": ObjectId(link_id)})
-    return Response(status_code=200)
+# (RIMOSSO: tutte le route /links/* duplicate, ora gestite in app/links.py)
 
 # --------------------------- NEWS ---------------------------
 
@@ -1102,6 +1065,11 @@ async def upload_foto(
         path.parent.mkdir(parents=True, exist_ok=True)
         rgb_img.save(path, format="JPEG", quality=85)
 
+        # Aggiorna il campo avatar nel documento utente
+        db = request.app.state.db
+        avatar_url = f"/media/foto/{user['_id']}.jpg"
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"avatar": avatar_url}})
+
         print("✅ Foto convertita e salvata come JPG:", path)
         resp = RedirectResponse("/me", status_code=303)
         resp.headers["Cache-Control"] = "no-store"  # previene caching
@@ -1175,13 +1143,47 @@ async def messaggi_page(request: Request, user=Depends(get_current_user)):
         {"request": request, "user": user}
     )
 
-@app.get("/tasks", response_class=HTMLResponse)
-async def tasks_page(request: Request, user=Depends(get_current_user)):
-    return templates.TemplateResponse(
-        "tasks.html",
-        {"request": request, "user": user}
-    )
+from app.organigramma import organigramma_router
+app.include_router(organigramma_router)
 
 from app.ws_broadcast import websocket_notify
 app.add_api_websocket_route("/ws/notify", websocket_notify)
+
+from app.soci import soci_router
+app.include_router(soci_router)
+
+from app.ai_news import ai_news_router
+app.include_router(ai_news_router)
+
+@app.post("/api/me/pins")
+async def add_pin(item: dict, request: Request, user=Depends(get_current_user)):
+    db = request.app.state.db
+    # item = {"type": "ai_news", "id": "123"}
+    if not item or "type" not in item or "id" not in item:
+        raise HTTPException(status_code=400, detail="Invalid item")
+    # Forza id a stringa
+    item = {"type": item["type"], "id": str(item["id"])}
+    pinned = user.get("pinned_items", [])
+    if item not in pinned:
+        pinned.append(item)
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinned_items": pinned}})
+        if "user" in request.session:
+            request.session["user"]["pinned_items"] = pinned
+    return JSONResponse(content={"ok": True, "pinned_items": pinned})
+
+@app.delete("/api/me/pins/{item_type}/{item_id}")
+async def remove_pin(item_type: str, item_id: str, request: Request, user=Depends(get_current_user)):
+    db = request.app.state.db
+    pinned = user.get("pinned_items", [])
+    # Confronta sempre id come stringa
+    new_pinned = [i for i in pinned if not (i["type"] == item_type and i["id"] == str(item_id))]
+    if len(new_pinned) != len(pinned):
+        await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinned_items": new_pinned}})
+        if "user" in request.session:
+            request.session["user"]["pinned_items"] = new_pinned
+    return JSONResponse(content={"ok": True, "pinned_items": new_pinned})
+
+@app.websocket("/ws/notify")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket_notify(websocket)
 

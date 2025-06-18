@@ -7,18 +7,14 @@
 
     {% if current_user.role == 'admin' %}
       <a href="/contatti/new" 
-         class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition">
-         + Nuovo contatto
+         class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition mb-6">
+         + Nuovo
       </a>
     {% endif %}
 
     {% if contacts %}
     <div id="contatti-list" class="grid gap-4">
-      {% for c in contacts %}
-        {% set user = current_user %}
-        {% set contact = c %}
-        {% include "contatti/contatti_row_partial.html" %}
-      {% endfor %}
+      {% include "contatti/contatti_list_partial.html" %}
     </div>
     {% else %}
     <p class="text-center text-slate-600">Nessun contatto disponibile.</p>
@@ -27,4 +23,20 @@
 </div>
 {% endblock content %}
 
-<script src="{{ url_for('static', path='js/ui.js') }}"></script>
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    console.log("DEBUG: DOMContentLoaded su /contatti");
+    fetch('/notifiche/mark-read/contatto', {method: 'POST', credentials: 'include'})
+      .then(() => {
+        if (document.querySelector('#notifiche-inline')) {
+          htmx.ajax('GET', '/notifiche/inline', {target: '#notifiche-inline', swap: 'outerHTML'});
+        }
+        const contattiBadgeContainer = document.getElementById('nav-contatti-badge-container');
+        if (contattiBadgeContainer) {
+          htmx.trigger(contattiBadgeContainer, 'refreshContattiBadgeEvent');
+        }
+      });
+  });
+</script>
+{% endblock %}

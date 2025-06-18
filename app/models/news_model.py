@@ -20,6 +20,7 @@ class NewsIn(BaseModel):
     branch: Optional[List[str]] = Field(default_factory=list)
     employment_type: Optional[List[str]] = Field(default_factory=list)
     created_at: Optional[datetime] = None
+    show_on_home: Optional[bool] = False
 
 class NewsOut(NewsIn):
     id: PyObjectId 

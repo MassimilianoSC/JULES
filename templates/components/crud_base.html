@@ -13,14 +13,28 @@
     {% endif %}
 
     {% if objects %}
-      <div id="{{ list_id }}" class="grid gap-4 mt-6">
-        {% for obj in objects %}
-          {{ row_macro(obj, user) }}
-        {% endfor %}
-      </div>
+      {% if title == 'Documenti' %}
+        <div id="documents-list" class="grid gap-4 mt-6">
+          {% with documents=objects, current_user=user %}
+            {% include "documents/list_partial.html" %}
+          {% endwith %}
+        </div>
+      {% else %}
+        <div id="{{ list_id }}" class="grid gap-4 mt-6">
+          {% for obj in objects %}
+            {% if title == 'News AI' %}
+              {% set d = obj %}
+              {% set user_ = user %}
+              {% include "ai_news/row_partial.html" %}
+            {% else %}
+              {{ row_macro(obj, user) }}
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
     {% else %}
       <p class="text-center text-slate-600 mt-6">Nessun elemento.</p>
     {% endif %}
   </div>
 </div>
-{% endmacro %} 
+{% endmacro %}

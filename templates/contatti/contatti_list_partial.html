@@ -1,0 +1,8 @@
+{% for c in contacts %}
+  {% set user = current_user %}
+  {% set contact = c %}
+  {% include "contatti/contatti_row_partial.html" %}
+{% endfor %}
+{% if not contacts %}
+  <div class="text-gray-500 text-sm px-4 py-2">Nessun contatto disponibile.</div>
+{% endif %} 

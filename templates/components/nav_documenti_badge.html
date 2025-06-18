@@ -1,0 +1,10 @@
+<div id="nav-documents-badge-container"
+     hx-get="/notifiche/count/documento"
+     hx-trigger="refreshDocumentiBadgeEvent from:body"
+     hx-swap="outerHTML">
+    {% if new_docs_count is defined and new_docs_count > 0 %}
+        <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">
+            {{ new_docs_count }}
+        </span>
+    {% endif %}
+</div> 

@@ -1,0 +1,12 @@
+<div id="documents-list" class="grid gap-4 mt-6"
+     hx-get="/documents/list/partial"
+     hx-trigger="update_document from:body"
+     hx-swap="outerHTML">
+  {% for d in documents %}
+    {% set user = current_user %}
+    {% include "documents/row_partial.html" %}
+  {% endfor %}
+  {% if not documents %}
+    <div class="text-gray-500 text-sm px-4 py-2">Nessun documento disponibile.</div>
+  {% endif %}
+</div>

@@ -6,6 +6,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="{{ url_for('static', path='css/hqe.bundle.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', path='css/comments.css') }}" rel="stylesheet">
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script>
     // forza l'invio di cookie in tutti i request htmx
@@ -34,7 +35,6 @@
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       document.body.addEventListener('closeModal', () => {
-        console.log('Close modal event triggered');
         const modal = document.querySelector('.fixed.inset-0');
         if (modal) {
           modal.classList.add('hidden');
@@ -48,15 +48,38 @@
     [x-cloak]{ display:none !important; }
     html, body { height: 100%; margin: 0; padding: 0; background: none !important; }
     .font-montserrat { font-family: 'Montserrat', Arial, sans-serif; }
+    .page-border-wrapper {
+      border: 10px solid #2563eb;
+      border-radius: 2.5rem;
+      box-sizing: border-box;
+      min-height: 100vh;
+      padding: 0 0 0 0;
+      background: transparent;
+      width: 100%;
+      max-width: 100vw;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+    .page-bg {
+      background: #3b82f6 !important;
+      min-height: 100vh;
+      width: 100%;
+      border-radius: 2.5rem;
+    }
   </style>
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+  {% block head %}{% endblock %}
   <title>{{ page_title or "HQ Engineering" }}</title>
   <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
   <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
   <script src="{{ url_for('static', path='js/ui.js') }}"></script>
 </head>
 
-<body class="antialiased font-sans text-gray-800">
+<body class="antialiased font-sans text-gray-800"
+      data-user-role="{{ user.role if user else '' }}"
+      data-user-id="{{ user._id if user else '' }}">
+  <div class="{% if request.path == '/' %}page-border-wrapper page-bg{% else %}page-content-wrapper{% endif %}">
 
   <!-- HEADER rimosso: ora la home è senza header classico, solo hamburger e logo nella pagina -->
 
@@ -87,43 +110,104 @@
   <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 shadow-2xl rounded-2xl border-t border-gray-100 max-w-5xl w-full flex justify-between items-center px-10 py-3 gap-8">
       <div class="w-full flex justify-between items-center gap-8">
           <a href="/" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Home: icona casa -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 12l9-9 9 9"/><path d="M9 21V9h6v12"/></svg>
+              <!-- Home: icona casa colorata -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <path d="M3 12L12 4l9 8" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+                <rect x="7" y="14" width="10" height="6" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
+              </svg>
               <span class="text-[13px] leading-tight font-medium text-center">Home</span>
           </a>
           <a href="/messaggi" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Messaggi: icona busta -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+              <!-- Messaggi: icona busta colorata -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <rect x="3" y="7" width="18" height="12" rx="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+                <path d="M3 7l9 7 9-7" stroke="#22c55e" stroke-width="2"/>
+              </svg>
               <span class="text-[13px] leading-tight font-medium text-center">Messaggi</span>
           </a>
-          <a href="/documents" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Documenti: icona file-text Lucide -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Documenti</span>
-              {% if new_docs_count and new_docs_count > 0 %}
-                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_docs_count }}</span>
-              {% endif %}
-          </a>
-          <a href="/contatti" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Contatti: icona utente -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M16 16v1a4 4 0 0 1-8 0v-1"/></svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Contatti</span>
-              {% if new_contacts_count and new_contacts_count > 0 %}
-                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_contacts_count }}</span>
-              {% endif %}
-          </a>
-          <a href="/news" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- News: icona campanella -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          <a href="/news" class="group relative flex flex-col items-center text-purple-800 hover:text-purple-600 flex-1 min-w-[64px]">
+              <!-- News: icona megafono viola -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <path d="M3 14V10a1 1 0 0 1 1-1h2l7-4v14l-7-4H4a1 1 0 0 1-1-1z" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+                <path d="M21 12a3 3 0 0 0-3-3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                <path d="M21 12a3 3 0 0 1-3 3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+              </svg>
               <span class="text-[13px] leading-tight font-medium text-center">News</span>
-              {% if new_news_count and new_news_count > 0 %}
-                <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{{ new_news_count }}</span>
+              {% if user %}{% include "components/nav_news_badge.html" %}{% endif %}
+          </a>
+          <a href="/documents" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Documenti: icona documento colorata -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <rect x="5" y="3" width="14" height="18" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
+                <path d="M9 7h6M9 11h6M9 15h2" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Documenti</span>
+              {% include "components/nav_documenti_badge.html" %}
+          </a>
+          <a href="/contatti" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Contatti: icona utente colorata -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <circle cx="12" cy="9" r="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <ellipse cx="12" cy="19" rx="7" ry="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Contatti</span>
+              {% set unread_contatti_count = new_contacts_count if new_contacts_count is defined else 0 %}
+              {% include "components/nav_contatti_badge.html" %}
+          </a>
+          <a href="/ai-news" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- AI News: icona robot colorata aggiornata e più grande -->
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <!-- Antenne laterali -->
+                <rect x="2.5" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
+                <rect x="18.7" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
+                <!-- Testa robot: rettangolo più squadrato e grande -->
+                <rect x="5" y="4.5" width="14" height="13" rx="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+                <!-- Occhi: blu, più grandi -->
+                <circle cx="10" cy="11" r="1.4" fill="#2563eb"/>
+                <circle cx="14" cy="11" r="1.4" fill="#2563eb"/>
+                <!-- Bocca: linea verde, più grande -->
+                <rect x="10" y="15.2" width="4" height="1.4" rx="0.7" fill="#22c55e"/>
+                <!-- Antenna centrale -->
+                <rect x="11.2" y="2.5" width="1.6" height="2.5" rx="0.8" fill="#2563eb"/>
+                <circle cx="12" cy="2" r="0.9" fill="#2563eb"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">News AI</span>
+              {% if u %}
+                {% set new_ai_news_count = new_ai_news_count if new_ai_news_count is defined else 0 %}
+                {% set unread_ai_news_count = new_ai_news_count %}
+                {% include "components/nav_ai_news_badge.html" %}
               {% endif %}
           </a>
           {% if u %}
-          <a href="/links" class="relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Link utili: icona catena Lucide -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 1 7.07 0l1.41 1.41a5 5 0 0 1-7.07 7.07l-1.41-1.41"/><path d="M14 11a5 5 0 0 0-7.07 0l-1.41 1.41a5 5 0 0 0 7.07 7.07l1.41-1.41"/></svg>
+          <a href="/links" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Link utili: globo colorato friendly -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2" fill="#e0f2fe"/>
+                <path d="M2 12h20" stroke="#22c55e" stroke-width="2"/>
+                <path d="M12 2a15.3 15.3 0 0 1 0 20" stroke="#fbbf24" stroke-width="2"/>
+                <path d="M12 2a15.3 15.3 0 0 0 0 20" stroke="#f87171" stroke-width="2"/>
+              </svg>
               <span class="text-[13px] leading-tight font-medium text-center">Link</span>
               {% set unread_link_count = 0 %}
               {% if unread_counts is defined and unread_counts %}
@@ -132,11 +216,31 @@
               {% include "components/nav_links_badge.html" %}
           </a>
           {% endif %}
-          <a href="/tasks" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Tasks: icona check-square Lucide -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="9 11 12 14 17 9"/></svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Tasks</span>
+          <a href="/organigramma" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Organigramma: icona documento colorata -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                <rect x="3" y="3" width="18" height="18" rx="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <path d="M7 8h10M7 12h10M7 16h10" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Organigramma<br>e procedure</span>
           </a>
+          {% if u and u.role == "admin" %}
+          <a href="/soci" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Icona Soci: user group -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
+                   style="transition: transform 0.2s; will-change: transform;"
+                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
+                   onmouseout="this.style.transform='none'">
+                  <circle cx="8" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                  <circle cx="16" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                  <ellipse cx="12" cy="18" rx="8" ry="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Soci</span>
+          </a>
+          {% endif %}
       </div>
   </nav>
 
@@ -185,5 +289,11 @@
     };
   </script>
   <!-- RIMOSSO: WebSocket globale per notifiche e aggiornamenti real-time, ora gestito solo in ui.js -->
+  {% block scripts %}{% endblock %}
+  <script>
+    window.currentUserId = "{{ user._id if user is defined and user and user._id is defined else '' }}";
+    window.currentUserRole = "{{ user.role if user is defined and user and user.role is defined else '' }}";
+  </script>
+  </div>
 </body>
 </html>

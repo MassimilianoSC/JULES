@@ -1,0 +1,74 @@
+{% macro document_row(d, user=None) %}
+<div id="document-{{ d._id }}" class="p-4 {% if new_doc_ids is defined and d._id|string in new_doc_ids %}bg-yellow-50 border-l-4 border-yellow-400 animate-pulse{% endif %}">
+  <div class="flex flex-row justify-between">
+    <div class="flex-1">
+      <h2 class="text-xl font-bold text-gray-900 mb-2">{{ d.title }}</h2>
+      <div class="prose max-w-none text-gray-800 mb-4">
+        {{ d.description | safe }}
+      </div>
+      <div class="text-sm text-gray-600 mt-2">
+        Caricato il {{ d.uploaded_at.strftime("%d/%m/%Y") if d.uploaded_at else "?" }}
+      </div>
+    </div>
+    <div class="w-1/3 pl-8 mt-4 md:mt-0">
+      <div class="text-base font-bold text-slate-700 mb-1">Destinatario</div>
+      <div class="text-sm text-gray-700 bg-blue-100 rounded-lg px-4 py-2">
+        Filiale: {{ 'Tutte' if d.branch == '*' else d.branch or '?' }}<br>
+        {% set tipo = d.employment_type %}
+        Tipologia:
+        {% if tipo is string %}
+          {{ {
+            "TD": "Tempo Determinato",
+            "TI": "Tempo Indeterminato",
+            "AP": "Apprendistato",
+            "CO": "Collaborazione",
+            "*": "Tutte"
+          }[tipo] }}
+        {% elif tipo is sequence %}
+          {% for t in tipo %}
+            {{ {
+              "TD": "Tempo Determinato",
+              "TI": "Tempo Indeterminato",
+              "AP": "Apprendistato",
+              "CO": "Collaborazione",
+              "*": "Tutte"
+            }[t] }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          ?
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="flex gap-2 mt-2 md:mt-0">
+    <a href="/documents/{{ d._id }}/preview" target="_blank" 
+       class="inline-block px-4 py-2 bg-blue-700 text-white rounded-lg shadow hover:bg-blue-900 transition">
+      Anteprima
+    </a>
+    <a href="/documents/{{ d._id }}"
+       class="inline-block px-4 py-2 bg-gray-200 text-blue-900 rounded-lg shadow hover:bg-gray-300 transition">
+      Scarica
+    </a>
+    {% if user and user.role == "admin" %}
+      <button
+        hx-get="/documents/{{ d._id }}/edit"
+        hx-target="#modal-body"
+        hx-swap="innerHTML"
+        class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
+        Modifica
+      </button>
+      <form
+        hx-delete="/documents/{{ d._id }}"
+        hx-target="#document-{{ d._id }}"
+        hx-swap="delete"
+        style="display:inline">
+        <button type="button"
+                onclick="showDelete(this)"
+                class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+          Elimina
+        </button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %} 

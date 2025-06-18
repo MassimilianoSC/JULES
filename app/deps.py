@@ -15,7 +15,7 @@ async def get_current_user(request: Request):
 
     # ─── NIENTE SESSIONE ────────────────────────────────────────────
     if not uid:
-        print(f"[DEBUG] Nessun utente autenticato per richiesta a {request.url.path}")
+
         if "HX-Request" in request.headers:
             # 1) HTMX capisce HX-Redirect e ricarica la pagina
             raise HTTPException(
@@ -67,9 +67,16 @@ async def get_docs_coll(
     user = Depends(get_current_user),
     db = Depends(get_db)
 ) -> AsyncIOMotorCollection:
-    """Collection documenti branch-aware"""
+    """Collection documenti"""
     if user["role"] == "admin":
         return db.documents
     return db.documents.with_options(
         read_preference=ReadPreference.SECONDARY
-    ).find({"branch": user["branch"]}) 
+    )
+
+async def get_ai_news_collection(
+    user = Depends(get_current_user),
+    db = Depends(get_db)
+) -> AsyncIOMotorCollection:
+    """Collection ai_news branch-aware"""
+    return db.ai_news
