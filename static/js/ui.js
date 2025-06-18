@@ -1539,33 +1539,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // --- Scroll automatico news-ticker continuo (unica versione) ---
+  // --- Scroll news-ticker on hover ---
   let newsTickerScrollInterval = null;
 
-  function startContinuousNewsTickerScroll() {
-    // Ferma eventuali intervalli precedenti
-    if (newsTickerScrollInterval) {
-      clearInterval(newsTickerScrollInterval);
-      newsTickerScrollInterval = null;
-    }
-    const ticker = document.querySelector('#news-ticker .overflow-x-auto');
-    if (!ticker) {
-      console.log('[NewsTicker] Contenitore non trovato');
+  function startHoverScrollEffect() {
+    const newsTickerContainer = document.getElementById('news-ticker');
+    if (!newsTickerContainer) {
       return;
     }
-    console.log('[NewsTicker] Scroll automatico avviato');
-    newsTickerScrollInterval = setInterval(() => {
-      ticker.scrollLeft += 2;
-      if (ticker.scrollLeft + ticker.clientWidth >= ticker.scrollWidth - 2) {
-        ticker.scrollLeft = 0;
+    const scrollableArea = newsTickerContainer.querySelector('.overflow-x-auto');
+    if (!scrollableArea) {
+      return;
+    }
+    newsTickerContainer.addEventListener('mouseenter', () => {
+      if (newsTickerScrollInterval) {
+        clearInterval(newsTickerScrollInterval);
       }
-    }, 16);
+      newsTickerScrollInterval = setInterval(() => {
+        scrollableArea.scrollLeft += 2;
+        if (scrollableArea.scrollLeft + scrollableArea.clientWidth >= scrollableArea.scrollWidth - 2) {
+          scrollableArea.scrollLeft = 0;
+        }
+      }, 16);
+    });
+    newsTickerContainer.addEventListener('mouseleave', () => {
+      if (newsTickerScrollInterval) {
+        clearInterval(newsTickerScrollInterval);
+        newsTickerScrollInterval = null;
+      }
+    });
   }
 
-  document.addEventListener('DOMContentLoaded', startContinuousNewsTickerScroll);
+  function initNewsTicker() {
+    startHoverScrollEffect();
+  }
+
+  if (document.readyState === 'interactive' || document.readyState === 'complete') {
+    initNewsTicker();
+  } else {
+    document.addEventListener('DOMContentLoaded', initNewsTicker); // Simplified listener
+  }
+
   document.body.addEventListener('htmx:afterSwap', function(evt) {
     if (evt.detail && evt.detail.target && evt.detail.target.id === 'news-ticker') {
-      startContinuousNewsTickerScroll();
+      startHoverScrollEffect();
     }
   });
 });
