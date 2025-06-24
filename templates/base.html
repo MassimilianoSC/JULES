@@ -7,7 +7,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="{{ url_for('static', path='css/hqe.bundle.css') }}" rel="stylesheet">
   <link href="{{ url_for('static', path='css/comments.css') }}" rel="stylesheet">
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
+  <script type="module" src="/static/js/core/event-bus-global.js"></script>
   <script>
     // forza l'invio di cookie in tutti i request htmx
     htmx.config.withCredentials = true;
@@ -32,6 +33,14 @@
     });
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="/static/js/features/notifications/index.js"></script>
+  <script type="module">
+    // Test toast
+    import { showToast } from "/static/js/features/notifications/toast.js";
+    document.addEventListener('DOMContentLoaded', () => {
+      showToast({ title: "Toast OK", body: "Sistema notifiche pronto", type: "success" });
+    });
+  </script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       document.body.addEventListener('closeModal', () => {
@@ -71,14 +80,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
   {% block head %}{% endblock %}
   <title>{{ page_title or "HQ Engineering" }}</title>
-  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
-  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
-  <script src="{{ url_for('static', path='js/ui.js') }}"></script>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 </head>
 
-<body class="antialiased font-sans text-gray-800"
-      data-user-role="{{ user.role if user else '' }}"
-      data-user-id="{{ user._id if user else '' }}">
+<body hx-ext="morph" class="bg-slate-50 font-sans" data-user-role="{{ user.role if user else '' }}" data-user-id="{{ user._id|string if user else '' }}">
+
+  <div id="ws-debugger" style="position: fixed; bottom: 10px; right: 10px; z-index: 9999; width: 20px; height: 20px; border-radius: 50%; background-color: gray; border: 2px solid black;" title="WebSocket Debugger"></div>
+
   <div class="{% if request.path == '/' %}page-border-wrapper page-bg{% else %}page-content-wrapper{% endif %}">
 
   <!-- HEADER rimosso: ora la home è senza header classico, solo hamburger e logo nella pagina -->
@@ -289,11 +297,21 @@
     };
   </script>
   <!-- RIMOSSO: WebSocket globale per notifiche e aggiornamenti real-time, ora gestito solo in ui.js -->
-  {% block scripts %}{% endblock %}
+  {% block scripts %}
+    <!-- Core Scripts -->
+    <script type="module" src="/static/js/core/bootstrap.js"></script>
+
+    <!-- Features -->
+    <script type="module" src="/static/js/features/news-ticker/index.js"></script>
+
+    <!-- UI globale -->
+    <script type="module" src="/static/js/ui.js"></script>
+  {% endblock %}
   <script>
     window.currentUserId = "{{ user._id if user is defined and user and user._id is defined else '' }}";
     window.currentUserRole = "{{ user.role if user is defined and user and user.role is defined else '' }}";
   </script>
   </div>
-</body>
+
+  </body>
 </html>
