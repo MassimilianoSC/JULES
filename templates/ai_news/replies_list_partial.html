@@ -1,51 +1,13 @@
-{% for reply in replies %}
-<div class="ml-8 border-l-2 border-gray-200 pl-4 my-2" id="reply-{{ reply._id }}">
-    <div class="flex items-start space-x-3">
-        <!-- Avatar -->
-        <div class="flex-shrink-0">
-            <img class="h-8 w-8 rounded-full" src="{{ reply.author.avatar or '/static/img/avatar-default.png' }}" alt="{{ reply.author.name }}">
-        </div>
-        
-        <!-- Contenuto -->
-        <div class="flex-grow">
-            <!-- Header -->
-            <div class="flex items-center space-x-2">
-                <span class="font-medium text-gray-900">{{ reply.author.name }}</span>
-                <span class="text-sm text-gray-500">{{ reply.created_at.strftime('%d/%m/%Y %H:%M') }}</span>
-            </div>
-            
-            <!-- Testo -->
-            <div class="mt-1 text-sm text-gray-700">
-                {{ reply.content }}
-            </div>
-            
-            <!-- Footer -->
-            <div class="mt-2 flex items-center space-x-4 text-sm">
-                <!-- Like button -->
-                <button 
-                    class="flex items-center space-x-1 text-gray-500 hover:text-blue-600 transition-colors"
-                    hx-post="/api/ai-news/{{ news_id }}/comments/{{ reply._id }}/like"
-                    hx-swap="outerHTML"
-                    data-liked="{{ 'true' if reply.user_has_liked else 'false' }}"
-                >
-                    <svg class="w-4 h-4" fill="{{ 'currentColor' if reply.user_has_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
-                    </svg>
-                    <span>{{ reply.likes or 0 }}</span>
-                </button>
-                
-                <!-- Indicatore di lettura -->
-                {% if reply.read_by and user._id in reply.read_by %}
-                <span class="text-xs text-gray-400" title="Letto il {{ reply.read_at[user._id].strftime('%d/%m/%Y %H:%M') }}">
-                    <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
-                </span>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
+{% for reply_item in replies %}
+  {# Usiamo il partial _comment_item, passando 'reply_item' come 'comment'.
+     Assicurarsi che news_id e user siano disponibili nel contesto.
+     Potrebbe essere necessario adattare _comment_item.html se la struttura di una 'reply'
+     è significativamente diversa da un 'comment' o se mancano campi attesi (es. replies_count per una reply).
+     Per ora, assumiamo che la struttura sia compatibile abbastanza.
+  #}
+  <div class="ml-8 border-l-2 border-gray-200 pl-4 my-2" id="comment-{{ reply_item._id }}"> {# Manteniamo un ID per la reply, ma usiamo la logica di _comment_item #}
+    {% include "ai_news/_comment_item.html" with context comment=reply_item news_id=news_id user=user %}
+  </div>
 {% endfor %}
 
 {% if has_more %}

@@ -86,11 +86,13 @@ async def broadcast_message(
     payload: Dict,
     branch: Optional[str] = None,
     employment_type: Optional[List[str]] = None,
-    exclude_user_id: Optional[str] = None
+    exclude_user_id: Optional[str] = None,
+    target_user_id: Optional[str] = None # Nuovo parametro per targeting diretto
 ):
     """
-    Invia un messaggio WebSocket a un sottoinsieme filtrato di utenti.
-    Se non vengono forniti filtri, invia a tutti (tranne all'utente escluso).
+    Invia un messaggio WebSocket a utenti filtrati o a un utente specifico.
+    - Se target_user_id è fornito, invia solo a quell'utente.
+    - Altrimenti, applica filtri branch/employment_type ed esclude exclude_user_id.
     """
     if not active_ws_connections:
         logger.debug("[WS] Nessuna connessione attiva")
@@ -100,6 +102,7 @@ async def broadcast_message(
     recipients = []
     
     logger.debug(f"[WS] Preparazione broadcast:")
+    logger.debug(f"[WS] - Target User ID: {target_user_id}")
     logger.debug(f"[WS] - Branch filtro: {branch}")
     logger.debug(f"[WS] - Employment type filtro: {employment_type}")
     logger.debug(f"[WS] - User ID da escludere: {exclude_user_id}")
@@ -122,31 +125,39 @@ async def broadcast_message(
             logger.debug(f"[WS] - Ruolo: {user_role}")
             logger.debug(f"[WS] - Branch: {user_branch}")
             logger.debug(f"[WS] - Employment Type: {user_emp_type}")
+
+            # Se è specificato un target_user_id, invia solo a quell'utente
+            if target_user_id:
+                if user_id == target_user_id:
+                    logger.debug(f"[WS] - INCLUSO: corrisponde a target_user_id")
+                    recipients.append(connection)
+                else:
+                    logger.debug(f"[WS] - ESCLUSO: non corrisponde a target_user_id")
+                continue # Passa alla prossima connessione
             
+            # Altrimenti, applica i filtri standard
             # Filtra per utente escluso
             if exclude_user_id and user_id == exclude_user_id:
                 logger.debug(f"[WS] - ESCLUSO: è l'utente che ha fatto l'azione")
                 continue
 
-            # Non inviare notifiche agli admin
-            if payload.get('type') == 'new_notification' and user_role == 'admin':
-                logger.debug(f"[WS] - ESCLUSO: è un admin e questo è un toast di notifica")
-                logger.debug(f"[WS] - Tipo payload: {payload.get('type')}")
-                logger.debug(f"[WS] - Ruolo utente: {user_role}")
+            # Non inviare notifiche di tipo 'new_notification' (toast) agli admin,
+            # a meno che non siano il target_user_id esplicito (gestito sopra).
+            if payload.get('type') == 'new_notification' and user_role == 'admin' and not target_user_id:
+                logger.debug(f"[WS] - ESCLUSO: è un admin e questo è un toast di notifica generico")
                 continue
 
-            # Filtra per filiale
+            # Filtra per filiale (solo se non c'è target_user_id)
             if branch and branch != "*" and user_branch != branch:
                 logger.debug(f"[WS] - ESCLUSO: branch non corrispondente")
                 continue
 
-            # Filtra per tipo di impiego
+            # Filtra per tipo di impiego (solo se non c'è target_user_id)
             if employment_type and "*" not in employment_type and user_emp_type not in employment_type:
                 logger.debug(f"[WS] - ESCLUSO: employment type non corrispondente")
                 continue
             
-            logger.debug(f"[WS] - INCLUSO: tutti i filtri passati")
-            # Se tutti i filtri passano, aggiungi alla lista dei destinatari
+            logger.debug(f"[WS] - INCLUSO: tutti i filtri (non target) passati")
             recipients.append(connection)
 
         except Exception as e:

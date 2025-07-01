@@ -789,16 +789,32 @@ async def add_comment(
     if not news:
         raise HTTPException(status_code=404, detail="News non trovata")
     
+    data = await request.json() # Assicuriamoci che data sia definito qui
+    parent_id_str = data.get("parentId") # Il frontend potrebbe inviare parentId per le risposte
+
     # Crea il commento
+    ALLOWED_TAGS_COMMENT = ['a', 'b', 'strong', 'i', 'em', 'u', 'br', 'p']
+    ALLOWED_ATTRIBUTES_COMMENT = {'a': ['href', 'title', 'target']}
+
+    sanitized_content = bleach.clean(
+        data["content"],
+        tags=ALLOWED_TAGS_COMMENT,
+        attributes=ALLOWED_ATTRIBUTES_COMMENT,
+        strip=True
+    )
+
     comment = {
         "_id": ObjectId(),
         "news_id": ObjectId(news_id),
         "user_id": current_user["_id"],
-        "content": data["content"],
+        "content": sanitized_content, # Usa il contenuto sanitizzato
         "created_at": datetime.utcnow(),
         "likes": [],
         "replies_count": 0
     }
+    if parent_id_str and ObjectId.is_valid(parent_id_str):
+        comment["parent_id"] = ObjectId(parent_id_str)
+        comment["news_id"] = news["_id"] # Assicura che news_id sia ObjectId della news padre
     
     await db.ai_news_comments.insert_one(comment)
     
@@ -813,26 +829,67 @@ async def add_comment(
     
     # Prepara il commento per il frontend
     comment_out = {
-        **comment,
+        **comment, # commento appena inserito nel DB, che include già content sanitizzato
         "_id": str(comment["_id"]),
         "news_id": str(comment["news_id"]),
-        "user_id": str(comment["user_id"]),
+        "author_id": str(comment["user_id"]), # Manteniamo author_id per coerenza
         "created_at": comment["created_at"].isoformat(),
-        "user": {
+        # "content" è già in comment ed è quello sanitizzato
+        "author": { # Standardizzato a "author"
             "_id": str(current_user["_id"]),
             "name": current_user["name"],
             "avatar": current_user.get("avatar", "")
-        }
+        },
+        "likes": comment.get("likes", []), # Assicurati che likes sia presente
+        "replies_count": comment.get("replies_count", 0) # Assicurati che replies_count sia presente
     }
     
     # Invia il nuovo payload WebSocket unificato
-    await broadcast_message({
-        "type": "comment/add",
-        "news_id": news_id,
-        "comment": comment_out,
-        "author": str(current_user["_id"]),
-        "total": new_total
-    })
+    parent_replies_count_updated = 0
+
+    # --- Creazione Notifiche Specifiche per Commenti/Risposte/Menzioni ---
+    await crea_notifica_commento(
+        request=request,
+        news_id=news_id, # String ID della news
+        comment_id=str(comment["_id"]), # String ID del commento/risposta appena creato
+        author_id=str(current_user["_id"]), # String ID dell'autore del commento/risposta
+        parent_id=parent_id_str if parent_id_str and ObjectId.is_valid(parent_id_str) else None,
+        mentioned_users=data.get("mentions", []) # Lista di string ID utenti menzionati
+    )
+    # --- Fine Creazione Notifiche Specifiche ---
+
+    if parent_id_str and ObjectId.is_valid(parent_id_str):
+        # Incrementa replies_count del genitore e recupera il conteggio aggiornato
+        parent_comment_updated = await db.ai_news_comments.find_one_and_update(
+            {"_id": ObjectId(parent_id_str)},
+            {"$inc": {"replies_count": 1}},
+            return_document=ReturnDocument.AFTER,
+            projection={"replies_count": 1}
+        )
+        if parent_comment_updated:
+            parent_replies_count_updated = parent_comment_updated.get("replies_count", 0)
+
+        # Invia messaggio specifico per l'aggiunta di una risposta
+        await broadcast_message({
+            "type": "reply/add",
+            "data": {
+                "news_id": news_id,
+                "parent_id": parent_id_str,
+                "reply": comment_out, # comment_out ora contiene la risposta
+                "parent_replies_count": parent_replies_count_updated
+            }
+        })
+    else:
+        # È un commento principale
+        await broadcast_message({
+            "type": "comment/add",
+            "data": { # Avvolgiamo in 'data' per coerenza con 'reply/add'
+                "news_id": news_id,
+                "comment": comment_out,
+                "author_id": str(current_user["_id"]), # Rinominato da 'author' per chiarezza
+                "total_comments": new_total # Rinominato da 'total'
+            }
+        })
     
     return JSONResponse(comment_out)
 
@@ -850,27 +907,82 @@ async def delete_comment(
     # Verifica autorizzazione
     if str(comment["user_id"]) != str(current_user["_id"]) and current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Non autorizzato")
+
+    news_id_obj = comment["news_id"] # Salva l'ObjectId della news
+
+    # --- Inizio Eliminazione a Cascata ---
+    # 1. Trova e elimina tutte le risposte al commento principale
+    replies_to_delete_cursor = db.ai_news_comments.find({"parent_id": ObjectId(comment_id)})
+    replies_to_delete = await replies_to_delete_cursor.to_list(None)
     
+    num_replies_deleted = 0
+    if replies_to_delete:
+        reply_ids_to_delete = [reply["_id"] for reply in replies_to_delete]
+        delete_result = await db.ai_news_comments.delete_many({"_id": {"$in": reply_ids_to_delete}})
+        num_replies_deleted = delete_result.deleted_count
+
+        # Invia messaggi WebSocket per ogni risposta eliminata
+        for reply in replies_to_delete:
+            # Per aggiornare il conteggio sul genitore (che sta per essere eliminato),
+            # non è strettamente necessario, ma per coerenza di evento.
+            # Dato che il genitore viene eliminato, il suo replies_count non è più rilevante.
+            # Potremmo inviare parent_replies_count = 0 o ometterlo.
+            await broadcast_message({
+                "type": "reply/delete",
+                "data": {
+                    "news_id": str(news_id_obj),
+                    "parent_id": str(comment_id), # Il commento che stiamo eliminando è il genitore di queste risposte
+                    "reply_id": str(reply["_id"]),
+                    "parent_replies_count": 0 # Il genitore sta scomparendo
+                }
+            })
+    # --- Fine Eliminazione a Cascata ---
+
+    # 2. Elimina il commento genitore
     await db.ai_news_comments.delete_one({"_id": ObjectId(comment_id)})
-    
-    # Calcola il nuovo totale
-    new_total = await db.ai_news_comments.count_documents({"news_id": comment["news_id"]})
-    
-    # Aggiorna le statistiche
+    num_parent_deleted = 1
+
+    # 3. Aggiorna le statistiche sulla news
+    total_comments_deleted = num_parent_deleted + num_replies_deleted
     await db.ai_news.update_one(
-        {"_id": comment["news_id"]},
-        {"$inc": {"stats.comments": -1}}
+        {"_id": news_id_obj},
+        {"$inc": {"stats.comments": -total_comments_deleted}}
     )
+
+    # 4. Invia messaggio WebSocket per l'eliminazione del commento genitore
+    # Calcola il nuovo totale dei commenti per la news (dopo tutte le eliminazioni)
+    new_total_comments_for_news = await db.ai_news_comments.count_documents({"news_id": news_id_obj})
     
-    # Invia il nuovo payload WebSocket unificato
     await broadcast_message({
-        "type": "comment/delete",
-        "news_id": str(comment["news_id"]),
-        "comment_id": str(comment["_id"]),
-        "author": str(current_user["_id"]),
-        "total": new_total
+        "type": "comment/delete", # Evento per il commento genitore
+        "data": { # Struttura dati unificata
+            "news_id": str(news_id_obj),
+            "comment_id": str(comment_id),
+            "author_id": str(comment["user_id"]), # Autore del commento eliminato
+            "total_comments": new_total_comments_for_news, # Conteggio aggiornato per la news
+            "deleted_replies_count": num_replies_deleted # Info aggiuntiva
+        }
     })
     
+    # Se il commento eliminato era esso stesso una risposta, aggiorna il conteggio del SUO genitore
+    if comment.get("parent_id"):
+        parent_of_deleted_comment_updated = await db.ai_news_comments.find_one_and_update(
+            {"_id": comment["parent_id"]},
+            {"$inc": {"replies_count": -1}},
+            return_document=ReturnDocument.AFTER,
+            projection={"replies_count": 1}
+        )
+        if parent_of_deleted_comment_updated:
+            # Invia un evento per aggiornare il conteggio delle risposte del nonno
+            await broadcast_message({
+                "type": "reply/count_update", # Evento generico per aggiornare il conteggio risposte
+                "data": {
+                    "news_id": str(news_id_obj),
+                    "parent_id": str(comment["parent_id"]), # Il genitore del commento che abbiamo appena eliminato
+                    "parent_replies_count": parent_of_deleted_comment_updated.get("replies_count", 0)
+                }
+            })
+
     return Response(status_code=204)
 
 @ai_news_router.post("/api/ai-news/comments/{comment_id}/like")
@@ -928,8 +1040,19 @@ async def update_comment(
         raise HTTPException(status_code=404, detail="Commento non trovato")
     if str(comment["author_id"]) != str(current_user["_id"]):
         raise HTTPException(status_code=403, detail="Non autorizzato")
+
+    ALLOWED_TAGS_COMMENT = ['a', 'b', 'strong', 'i', 'em', 'u', 'br', 'p']
+    ALLOWED_ATTRIBUTES_COMMENT = {'a': ['href', 'title', 'target']}
+
+    sanitized_content = bleach.clean(
+        comment_update.content,
+        tags=ALLOWED_TAGS_COMMENT,
+        attributes=ALLOWED_ATTRIBUTES_COMMENT,
+        strip=True
+    )
+
     update_data = {
-        "content": comment_update.content,
+        "content": sanitized_content, # Usa il contenuto sanitizzato
         "metadata": comment_update.metadata,
         "updated_at": datetime.utcnow()
     }
@@ -1007,16 +1130,21 @@ async def delete_reply(
     # Decrementa replies_count sul commento padre
     await db.ai_news_comments.update_one(
         {"_id": reply["parent_id"]},
-        {"$inc": {"replies_count": -1}}
+        {"$inc": {"replies_count": -1}},
+        return_document=ReturnDocument.AFTER,
+        projection={"replies_count": 1}
     )
-    await broadcast_message(json.dumps({
-        "type": "comment:ai_news",
+    parent_replies_count_updated = parent_comment_updated.get("replies_count", 0) if parent_comment_updated else 0
+
+    await broadcast_message({ # Modificato per usare la struttura definita
+        "type": "reply/delete",
         "data": {
-            "ai_news_id": str(reply["news_id"]),
-            "comment_id": str(reply["_id"]),
-            "action": "delete"
+            "news_id": str(reply["news_id"]),
+            "parent_id": str(reply["parent_id"]),
+            "reply_id": reply_id, # reply_id è già una stringa
+            "parent_replies_count": parent_replies_count_updated
         }
-    }))
+    })
     return {"success": True}
 
 @ai_news_router.post("/api/markdown-preview", response_class=PlainTextResponse)

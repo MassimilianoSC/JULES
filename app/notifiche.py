@@ -18,23 +18,47 @@ async def crea_notifica(
     branch: str,
     id_risorsa: str,
     employment_type=None,
+    source_user_id: Optional[str] = None, # ID dell'utente che ha scatenato l'evento
+    destinatario_user_id: Optional[str] = None # ID dell'utente a cui inviare il WS mirato
 ):
     db = request.app.state.db
-    notifica = {
+    notifica_doc_data = {
         "tipo": tipo,
         "titolo": titolo,
         "branch": branch,
         "id_risorsa": id_risorsa,
         "created_at": datetime.utcnow(),
         "letta_da": [],
+        # Eventualmente aggiungere source_user_id anche nel DB se utile per analisi future
+        # "source_user_id": source_user_id
     }
     if employment_type is not None:
-        notifica["employment_type"] = employment_type
-        print(f"[DEBUG] Creo notifica: tipo={tipo}, id_risorsa={id_risorsa}, employment_type={employment_type}")
+        notifica_doc_data["employment_type"] = employment_type
+        print(f"[DEBUG] Creo notifica DB: tipo={tipo}, id_risorsa={id_risorsa}, employment_type={employment_type}")
     else:
-        print(f"[DEBUG] Creo notifica: tipo={tipo}, id_risorsa={id_risorsa}, employment_type=None")
-    await db.notifiche.insert_one(notifica)
-    print(f"[DEBUG] Notifica salvata: {notifica}")
+        print(f"[DEBUG] Creo notifica DB: tipo={tipo}, id_risorsa={id_risorsa}, employment_type=None")
+
+    result = await db.notifiche.insert_one(notifica_doc_data)
+    notifica_id_str = str(result.inserted_id)
+    print(f"[DEBUG] Notifica salvata DB: {notifica_doc_data}")
+
+    if destinatario_user_id:
+        # Invia notifica WebSocket mirata all'utente destinatario
+        from app.ws_broadcast import broadcast_message # Importazione locale per evitare dipendenze circolari a livello di modulo
+        payload_ws = {
+            "type": "new_notification",
+            "data": {
+                "id": notifica_id_str,
+                "message": titolo,
+                "tipo": tipo,
+                "source_user_id": source_user_id
+            }
+        }
+        try:
+            await broadcast_message(payload_ws, target_user_id=destinatario_user_id)
+            print(f"[DEBUG] Inviato WS new_notification a {destinatario_user_id} per notifica {notifica_id_str}")
+        except Exception as e:
+            print(f"[ERROR] Fallito invio WS new_notification a {destinatario_user_id}: {e}")
 
 
 # Funzione specializzata per le notifiche dei commenti
@@ -61,30 +85,37 @@ async def crea_notifica_commento(
             tipo="commento",
             titolo=f"{author_name} ha commentato la tua news",
             branch=news.get("branch", "*"),
-            id_risorsa=f"{news_id}:{comment_id}"
+            id_risorsa=f"{news_id}:{comment_id}",
+            source_user_id=author_id, # Chi ha scritto il commento
+            destinatario_user_id=str(news.get("author_id")) # A chi è destinata la notifica
         )
     # 2. Notifica all'autore del commento padre in caso di risposta
     if parent_id:
         parent_comment = await db.ai_news_comments.find_one({"_id": ObjectId(parent_id)})
         if parent_comment and str(parent_comment.get("author_id")) != author_id:
-            parent_author = await db.users.find_one({"_id": parent_comment["author_id"]})
+            # parent_author_obj = await db.users.find_one({"_id": parent_comment["author_id"]}) # Non serve recuperare l'oggetto intero
+            dest_id_parent_comment_author = str(parent_comment.get("author_id"))
             await crea_notifica(
                 request=request,
                 tipo="risposta",
                 titolo=f"{author_name} ha risposto al tuo commento",
                 branch=news.get("branch", "*"),
-                id_risorsa=f"{news_id}:{comment_id}"
+                id_risorsa=f"{news_id}:{comment_id}",
+                source_user_id=author_id, # Chi ha scritto la risposta
+                destinatario_user_id=dest_id_parent_comment_author # A chi è destinata la notifica
             )
     # 3. Notifiche per le menzioni
     if mentioned_users:
-        for user_id in mentioned_users:
-            if user_id != author_id:
+        for mentioned_user_id_str in mentioned_users: # Assumendo che mentioned_users sia una lista di stringhe ID
+            if mentioned_user_id_str != author_id: # Non notificare l'autore per auto-menzione
                 await crea_notifica(
                     request=request,
                     tipo="menzione",
                     titolo=f"{author_name} ti ha menzionato in un commento",
                     branch=news.get("branch", "*"),
-                    id_risorsa=f"{news_id}:{comment_id}"
+                    id_risorsa=f"{news_id}:{comment_id}",
+                    source_user_id=author_id, # Chi ha scritto il commento con la menzione
+                    destinatario_user_id=mentioned_user_id_str # A chi è destinata la notifica
                 )
 
 
@@ -300,4 +331,31 @@ async def notifiche_count_news(request: Request, user=Depends(get_current_user))
     return request.app.state.templates.TemplateResponse(
         "components/nav_news_badge.html",
         {"request": request, "unread_news_count": "" if count == 0 else count, "u": user}
+    )
+
+# 🔹 Endpoint per ottenere il conteggio delle notifiche di tipo "commento", "risposta", "menzione" (AI News Interactions)
+@notifiche_router.get("/notifiche/count/ai_interaction", response_class=HTMLResponse)
+async def notifiche_count_ai_interaction(request: Request, user=Depends(get_current_user)):
+    if not user:
+        return Response(status_code=204)
+
+    db = request.app.state.db
+    employment_type = user.get("employment_type")
+    branch = user.get("branch")
+
+    interaction_types = ["commento", "risposta", "menzione"]
+
+    q = {
+        "tipo": {"$in": interaction_types},
+        # Assumiamo che le notifiche per commenti/risposte/menzioni ereditino il branch dalla news AI
+        # e che la visibilità sia quindi basata su quello e sull'employment type dell'utente.
+        "branch": {"$in": ["*", branch]},
+        "letta_da": {"$ne": str(user["_id"])},
+        "$or": get_emp_type_conditions(employment_type)
+    }
+    count = await db.notifiche.count_documents(q)
+
+    return request.app.state.templates.TemplateResponse(
+        "components/nav_ai_news_badge.html",
+        {"request": request, "unread_ai_interaction_count": "" if count == 0 else count, "u": user}
     )

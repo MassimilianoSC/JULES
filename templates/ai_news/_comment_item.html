@@ -1,0 +1,92 @@
+{# Parametri attesi: comment, user, news_id #}
+{% set comment_id = comment._id | string %} {# Assicurati che sia una stringa per ID HTML #}
+{% set current_user_id = user._id | string %}
+
+<div class="flex items-start space-x-3 p-4 bg-white rounded-lg shadow-sm mb-3" id="comment-{{ comment_id }}"> {# Usiamo comment-id come ID base #}
+    <!-- Avatar -->
+    <div class="flex-shrink-0">
+        <img class="h-10 w-10 rounded-full"
+             src="{{ comment.author.avatar if comment.author and comment.author.avatar else '/static/img/avatar-default.png' }}"
+             alt="{{ comment.author.name if comment.author else 'Utente' }}">
+    </div>
+
+    <!-- Contenuto -->
+    <div class="flex-grow">
+        <!-- Header -->
+        <div class="flex items-center space-x-2">
+            <span class="font-medium text-gray-900">{{ comment.author.name if comment.author else 'Utente Anonimo' }}</span>
+            <span class="text-sm text-gray-500">
+                {%- if comment.created_at is string -%}
+                    {{ comment.created_at.split('.')[0].replace('T',' ') }} {# Semplice formattazione per ISO string #}
+                {%- elif comment.created_at -%}
+                    {{ comment.created_at.strftime('%d/%m/%Y %H:%M') }}
+                {%- endif -%}
+            </span>
+        </div>
+
+        <!-- Testo del commento -->
+        <div class="mt-1 text-sm text-gray-700 comment-content-display">
+             {# Il contenuto è già sanitizzato dal backend. Se contiene HTML sicuro (a,b,i), |safe lo renderizza.
+                La logica di highlighting delle menzioni sarà gestita da JavaScript. #}
+            {{ comment.content | safe }}
+        </div>
+
+        <!-- Footer / Azioni -->
+        <div class="mt-2 flex items-center space-x-4 text-sm">
+            <!-- Pulsante Like (HTMX) -->
+            <button
+                class="flex items-center space-x-1 text-gray-500 hover:text-blue-600 transition-colors"
+                hx-post="/api/ai-news/{{ news_id }}/comments/{{ comment_id }}/like" {# Assumendo che news_id sia disponibile nel contesto #}
+                hx-target="this" {# Aggiorna solo il pulsante stesso o una sua parte #}
+                hx-swap="outerHTML" {# O un swap più mirato se il backend restituisce solo il conteggio/stato #}
+                data-comment-id="{{ comment_id }}"
+                data-liked="{{ 'true' if comment.user_has_liked else 'false' }}" {# Da verificare se user_has_liked è nel comment object #}
+            >
+                <svg class="w-4 h-4" fill="{{ 'currentColor' if comment.user_has_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+                </svg>
+                <span class="like-count">{{ comment.likes | default(0) }}</span> {# comment.likes dovrebbe essere il conteggio numerico #}
+            </button>
+
+            {% if not comment.parent_id %} {# Mostra "Rispondi" solo per commenti, non per risposte (o gestisci diversamente) #}
+            <button
+                data-reply-btn {# JS si attaccherà a questo #}
+                data-comment-id="{{ comment_id }}"
+                data-news-id="{{ news_id }}"
+                class="text-sm text-gray-500 hover:text-gray-700">
+                Rispondi
+            </button>
+            {% endif %}
+
+            {% if user and (user.role == 'admin' or current_user_id == comment.author_id) %}
+            <button
+                data-delete-comment-btn {# JS si attaccherà a questo #}
+                data-comment-id="{{ comment_id }}"
+                data-news-id="{{ news_id }}"
+                class="ml-2 text-sm text-red-500 hover:text-red-700">
+                Elimina
+            </button>
+            {% endif %}
+        </div>
+
+        <!-- Form per rispondere (verrà inserito qui da JS o da un include nel loop genitore) -->
+        <div id="reply-form-container-{{ comment_id }}" class="mt-3"></div>
+
+        <!-- Container per le risposte (verrà popolato qui da JS o da un include nel loop genitore) -->
+        {% if not comment.parent_id and comment.replies_count and comment.replies_count > 0 %}
+        <div class="replies-section mt-3">
+            <button
+                class="toggle-replies text-sm text-blue-600 hover:text-blue-800"
+                data-comment-id="{{ comment_id }}"
+                data-news-id="{{ news_id }}"
+                {# Potrebbe usare HTMX per caricare o JS per mostrare/nascondere #}
+            >
+                Mostra risposte ({{ comment.replies_count }})
+            </button>
+            <div id="replies-container-{{ comment_id }}" class="hidden ml-8 mt-2 space-y-2 border-l-2 border-gray-200">
+                {# Le risposte verranno caricate qui #}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>

@@ -3,7 +3,11 @@
 import bus         from '/static/js/core/event-bus.js';
 import chatState   from './chat-state.js';
 import { parseMentions } from './mentions.js';
-import { updateStats } from './chat-state.js';
+// import { updateStats } from './chat-state.js'; // updateStats non è usata direttamente qui, ma da ws-handlers
+import { buildCommentElement } from './dom-renderer.js'; // Importa la funzione di rendering
+import logger from '/static/js/core/logger.js';
+
+const log = logger.module('CommentMgr');
 
 // Utility per il tempo relativo
 function timeAgo(date) {
@@ -66,112 +70,91 @@ document.addEventListener('click', e => {
       if (!res.ok) throw new Error(res.statusText);
     })
     .catch(e => {
-      console.error('[deleteComment] errore:', e);
-      alert('Errore durante l\'eliminazione');
+      log.error('Errore durante il tentativo di eliminazione del commento:', { commentId, newsId, error: e });
+      alert('Errore durante l\'eliminazione del commento.');
     });
     return;
   }
 });
 
 function toggleComments(newsId) {
+  log.debug(`Toggle commenti per newsId: ${newsId}`);
   const commentsSection = document.getElementById(`comments-section-${newsId}`);
   if (!commentsSection) {
-    console.error(`Sezione commenti non trovata per news ${newsId}`);
+    log.error(`Sezione commenti non trovata per news ${newsId}`);
     return;
   }
   
   if (commentsSection.classList.contains('hidden')) {
+    log.debug(`Mostro sezione commenti e carico per newsId: ${newsId}`);
     commentsSection.classList.remove('hidden');
     loadComments(newsId);
+    // dom-renderer ascolta chat:init, che dovrebbe essere emesso quando questa sezione
+    // (che contiene comments-container-newsId) diventa visibile e pronta.
+    // Assicuriamoci che chat:init venga emesso. Se non lo è, aggiungerlo qui o in loadComments.
+    // Per ora, si assume che l'HTML parziale caricato da un potenziale HTMX trigger
+    // o la struttura della pagina includa uno script che emette chat:init.
+    // Se loadComments è il punto di ingresso principale, potremmo emettere chat:init qui.
+    bus.emit('chat:init', { newsId });
   } else {
+    log.debug(`Nascondo sezione commenti per newsId: ${newsId}`);
     commentsSection.classList.add('hidden');
+    bus.emit('chat:destroy', { newsId: newsId, reason: 'toggled_off' });
   }
 }
 
 function loadComments(newsId) {
+  log.info(`Caricamento commenti per newsId: ${newsId}`);
   // Prima carichiamo le statistiche
   fetch(`/api/ai-news/${newsId}/stats`)
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) throw new Error(`Errore HTTP stats: ${response.status}`);
+      return response.json();
+    })
     .then(stats => {
-      // Aggiorniamo il badge con il totale iniziale
+      log.debug(`Statistiche ricevute per ${newsId}:`, stats);
       const badge = document.querySelector(`#comments-badge-${newsId}`);
       if (badge) {
         badge.textContent = stats.comments;
         badge.classList.toggle('hidden', stats.comments === 0);
       }
-      
-      // Poi carichiamo i commenti
+      log.debug(`Caricamento commenti effettivi per ${newsId}...`);
       return fetch(`/api/ai-news/${newsId}/comments`);
     })
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) throw new Error(`Errore HTTP commenti: ${response.status}`);
+      return response.json();
+    })
     .then(data => {
+      log.debug(`Commenti ricevuti per ${newsId}:`, data.items?.length || 0);
       const commentsList = document.querySelector(`#comments-list-${newsId}`);
       if (!commentsList) {
-        console.error(`Lista commenti non trovata per news ${newsId}`);
+        log.error(`Elemento lista commenti #comments-list-${newsId} non trovato.`);
         return;
       }
-      commentsList.innerHTML = data.items.map(comment => `
-        <div id="comment-${comment._id}" class="bg-white rounded-lg shadow p-4">
-          <div class="flex items-start space-x-3">
-            <div class="flex-shrink-0">
-              <img class="h-10 w-10 rounded-full" src="/static/img/avatar-default.png" alt="">
-            </div>
-            <div class="flex-1">
-              <div class="flex items-center justify-between">
-                <div class="text-sm font-medium text-gray-900">${comment.author?.name || 'Utente'}</div>
-                <div class="text-xs text-gray-500">${timeAgo(comment.created_at)}</div>
-              </div>
-              <div class="mt-1 prose prose-sm max-w-none text-gray-800">${comment.content}</div>
-              
-              <!-- Reactions -->
-              <div class="mt-2 flex items-center space-x-2">
-                <button class="reaction-button text-gray-500 hover:text-gray-700"
-                        data-comment-id="${comment._id}"
-                        data-reaction="like">
-                  <span class="reaction-count">${comment.reactions?.like || 0}</span>
-                  <i class="fas fa-thumbs-up"></i>
-                </button>
-              </div>
+      commentsList.innerHTML = '';
+      const currentUserId = window.currentUserId || (chatState.state.user ? chatState.state.user._id : null);
+      const currentUserRole = window.currentUserRole || (chatState.state.user ? chatState.state.user.role : null);
 
-              <!-- Reply button -->
-              <button class="reply-button mt-2 text-sm text-gray-500 hover:text-gray-700"
-                      data-comment-id="${comment._id}">
-                Rispondi
-              </button>
-
-              <!-- Delete button -->
-              ${comment.can_delete ? `
-              <button data-action="delete" data-id="${comment._id}" 
-                      class="ml-2 text-sm text-red-500 hover:text-red-700">
-                Elimina
-              </button>
-              ` : ''}
-            </div>
-          </div>
-        </div>
-      `).join('');
-
-      // Aggiungiamo i listener per i pulsanti di eliminazione
-      commentsList.querySelectorAll('[data-action="delete"]').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          if (!confirm('Eliminare il commento?')) return;
-          
-          const commentId = btn.dataset.id;
-          try {
-            const res = await fetch(`/api/ai-news/${newsId}/comments/${commentId}`, {
-              method: 'DELETE',
-              credentials: 'include'
-            });
-            if (!res.ok) throw new Error(await res.text());
-          } catch (e) {
-            console.error('[deleteComment] errore:', e);
-            alert('Errore durante l\'eliminazione');
-          }
-        });
+      data.items.forEach(comment => {
+        // Assumiamo che 'newsId' sia disponibile in questo scope
+        // e che 'user' (l'utente loggato) sia accessibile globalmente o tramite chatState
+        const commentElement = buildCommentElement(comment, newsId, currentUserId, currentUserRole);
+        commentsList.appendChild(commentElement);
       });
+
+      // La gestione dei listener per i pulsanti (like, reply, delete) ora dovrebbe essere centralizzata
+      // o gestita tramite delega eventi sull'elemento `commentsList` o un suo genitore,
+      // invece di riattaccarli qui. Per ora, questa parte è omessa, assumendo che
+      // il listener globale in questo file o la logica in dom-renderer/index gestirà i click.
+      // Se i pulsanti like usano HTMX (come in _comment_item.html), HTMX li gestirà automaticamente.
+      // Per i pulsanti reply e delete che usano data-attributes, il listener delegato esistente
+      // in questo file dovrebbe continuare a funzionare.
     })
     .catch(error => {
-      console.error('Errore nel caricamento dei commenti:', error);
+      log.error('Errore nel caricamento dei commenti:', { newsId, error });
+      // TODO: Mostrare un messaggio di errore all'utente nell'UI, es. con un toast
+      // showToast({ title: "Errore Chat", body: "Impossibile caricare i commenti.", type: "error" });
     });
 }
 
@@ -193,25 +176,18 @@ function send(newsId, textarea, replyTo = null) {
   textarea.value = '';
 }
 
-function showReplyForm(commentId) {
-  const el = document.getElementById(`reply-form-container-${commentId}`);
-  if (!el) return;
-  /* se esiste già non ricrearlo */
-  if (el.firstChild) { el.classList.toggle('hidden'); return; }
+function showReplyForm(commentId, newsId) { // newsId era implicito da chatState prima, ora lo passiamo
+  const commentElement = document.getElementById(`comment-${commentId}`);
+  if (!commentElement) return;
 
-  el.classList.remove('hidden');
-  el.innerHTML = /* html */`
-    <div class="flex gap-2 mt-2">
-      <textarea class="flex-1 p-2 border rounded-lg" rows="1"
-                placeholder="Rispondi…"></textarea>
-      <button class="px-3 py-1 bg-blue-600 text-white rounded-lg">
-        Invia
-      </button>
-    </div>`;
-  const ta   = el.querySelector('textarea');
-  const sendBtn = el.querySelector('button');
-  sendBtn.onclick = () => send(chatState.state.newsId, ta, commentId);
-  ta.focus();
+  const authorName = commentElement.querySelector('.font-medium.text-gray-900')?.textContent || 'commento';
+
+  // Emetti un evento per far gestire il rendering del form a dom-renderer
+  bus.emit('chat:display:replyForm', {
+    commentId,
+    newsId, // newsId è necessario per l'azione di invio
+    parentAuthorName: authorName
+  });
 }
 
 /* ----- Share  ---------------------------------------------------- */
@@ -282,7 +258,7 @@ function toggleReplies(commentId) {
 
 // Esporta le funzioni pubbliche
 export {
-  send,
+  send, // Esportata per essere usata da index.js e potenzialmente dal form di risposta in dom-renderer
   shareNews,
   updatePreview,
   togglePreview,
@@ -291,4 +267,13 @@ export {
   loadComments,
   showReplyForm,
   toggleEmojiPicker
-}; 
+};
+
+// Ascolta l'evento per inviare una risposta, emesso da dom-renderer.js
+bus.on('chat:send:reply', ({ newsId, parentId, content }) => {
+  // Crea una textarea fittizia o recupera il riferimento se necessario,
+  // oppure modifica la funzione 'send' per accettare direttamente il contenuto.
+  // Per ora, creiamo una textarea fittizia per compatibilità con la firma di 'send'.
+  const tempTextarea = { value: content };
+  send(newsId, tempTextarea, parentId);
+});
