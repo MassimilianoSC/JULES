@@ -35,21 +35,40 @@ async def create_link(
     result = await db.links.insert_one(link_data)
     new_id = str(result.inserted_id)
 
-    # 1. Notifica WebSocket SOLO ai destinatari
-    payload = create_action_notification_payload(
-        'create',
-        'link',
-        title.strip(),
-        str(current_user["_id"])
+    # 1. Salva la notifica nel database per il conteggio dei badge e la persistenza
+    # Assicurati che la funzione crea_notifica sia importata in links.py
+    # from app.notifiche import crea_notifica (se non già presente)
+    from app.notifiche import crea_notifica # Aggiunto per sicurezza, anche se potrebbe essere già importato a livello di modulo
+    await crea_notifica(
+        request=request,
+        tipo="link", # Tipo specifico per la notifica di link
+        titolo=f"Nuovo link aggiunto: {title.strip()}", # Titolo per la notifica
+        branch=branch.strip(),
+        id_risorsa=new_id, # ID del link appena creato
+        employment_type=employment_type, # Lista dei destinatari per tipo di impiego
+        source_user_id=str(current_user["_id"]) # Utente che ha creato il link
+        # destinatario_user_id non è necessario qui perché la notifica DB è per tutti,
+        # il broadcast WS sottostante gestirà la notifica live ai client.
+    )
+
+    # 2. Notifica WebSocket ai client connessi (questo potrebbe essere ora gestito internamente da crea_notifica se configurato,
+    # o mantenuto separato se si vuole un payload WS diverso da quello della notifica DB)
+    # Per ora, manteniamo il broadcast esistente per la notifica toast immediata.
+    # Il payload per il toast potrebbe essere diverso da quello che va nel DB.
+    payload_toast = create_action_notification_payload(
+        'create', # Azione
+        'link',   # Tipo di risorsa per il toast
+        title.strip(), # Titolo della risorsa
+        str(current_user["_id"]) # ID dell'utente che ha compiuto l'azione
     )
     await broadcast_message(
-        payload, 
+        payload_toast,
         branch=branch, 
-        employment_type=employment_type,  # Passa la lista direttamente
+        employment_type=employment_type,
         exclude_user_id=str(current_user["_id"])
     )
 
-    # 2. Broadcast dell'evento per aggiornare UI
+    # 3. Broadcast dell'evento generico per aggiornare UI (es. liste)
     await broadcast_resource_event(
         event="add",
         item_type="link",
