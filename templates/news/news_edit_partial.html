@@ -61,6 +61,27 @@
       </div>
     </fieldset>
 
+    <!-- Priorità -->
+    <div>
+      <label for="priority" class="text-sm font-medium text-slate-700">Priorità (1 più alta)</label>
+      <input type="number"
+             name="priority"
+             id="priority"
+             value="{{ n.priority | default(3) }}"
+             min="1" max="5"
+             class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+    </div>
+
+    <!-- Data Scadenza -->
+    <div>
+      <label for="expires_at_str" class="text-sm font-medium text-slate-700">Data Scadenza (opzionale)</label>
+      <input type="date"
+             name="expires_at_str"
+             id="expires_at_str"
+             value="{{ n.expires_at.strftime('%Y-%m-%d') if n.expires_at else '' }}"
+             class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+    </div>
+
     <!-- Evidenza in home -->
     <label class="inline-flex items-center gap-2 text-sm text-slate-700">
       <input type="checkbox"

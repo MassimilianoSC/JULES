@@ -34,11 +34,20 @@ async def create_news(
     branch: str = Form(...),
     employment_type: str = Form("*"),
     show_on_home: str = Form(None),
+    priority: int = Form(3), # Aggiunto priority
+    expires_at_str: str = Form(None), # Aggiunto expires_at_str
     current_user: dict = Depends(get_current_user)
 ):
     print("[DEBUG] Inizio creazione news")
     employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
     show_on_home = show_on_home is not None
+
+    expires_at = None
+    if expires_at_str:
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+        except ValueError:
+            pass # Lascia expires_at = None se il formato non è valido
 
     # Salva la news nel DB
     db = request.app.state.db
@@ -48,7 +57,9 @@ async def create_news(
         "branch": branch.strip(),
         "employment_type": employment_type_list,
         "created_at": datetime.utcnow(),
-        "show_on_home": show_on_home
+        "show_on_home": show_on_home,
+        "priority": priority, # Aggiunto al salvataggio
+        "expires_at": expires_at # Aggiunto al salvataggio
     }
     result = await db.news.insert_one(news_data)
     news_id = str(result.inserted_id)
@@ -221,22 +232,43 @@ async def edit_news_submit(
     branch: str = Form(...),
     employment_type: str = Form("*"),
     show_on_home: str = Form(None),
+    priority: int = Form(None), # Aggiunto priority opzionale
+    expires_at_str: str = Form(None), # Aggiunto expires_at_str opzionale
     current_user: dict = Depends(get_current_user)
 ):
     db = request.app.state.db
     employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
     show_on_home_bool = bool(show_on_home)
-    await db.news.update_one(
-        {"_id": ObjectId(news_id)},
-        {"$set": {
-            "title": title.strip(),
-            "content": content.strip(),
-            "branch": branch.strip(),
-            "employment_type": employment_type_list,
-            "show_on_home": show_on_home_bool,
-            "created_at": datetime.utcnow()
-        }}
-    )
+
+    update_fields = {
+        "title": title.strip(),
+        "content": content.strip(),
+        "branch": branch.strip(),
+        "employment_type": employment_type_list,
+        "show_on_home": show_on_home_bool,
+        # Non aggiorniamo created_at durante una modifica, ma piuttosto updated_at se lo avessimo
+    }
+
+    if priority is not None:
+        update_fields["priority"] = priority
+
+    if expires_at_str is not None:
+        if not expires_at_str: # Stringa vuota per rimuovere la data
+            update_fields["expires_at"] = None
+        else:
+            try:
+                update_fields["expires_at"] = datetime.fromisoformat(expires_at_str)
+            except ValueError:
+                # Opzione: ignorare la data malformata o sollevare un errore?
+                # Per ora la ignoro, non aggiornando il campo.
+                pass
+
+    if update_fields: # Solo se ci sono campi da aggiornare (dovrebbe sempre esserci almeno il titolo)
+        await db.news.update_one(
+            {"_id": ObjectId(news_id)},
+            {"$set": update_fields}
+        )
+
     updated = await db.news.find_one({"_id": ObjectId(news_id)})
     # RIMOSSA logica di interazione con db.home_highlights per le news
     # if show_on_home_bool:
@@ -466,162 +498,162 @@ async def news_row_partial(request: Request, news_id: str, user=Depends(get_curr
         {"request": request, "n": news, "user": user}
     )
 
-@news_router.post("/new", dependencies=[Depends(require_admin)])
-async def create_news(
-    request: Request,
-    title: str = Form(...),
-    content: str = Form(...),
-    priority: int = Form(3),
-    expires_at_str: str = Form(None),
-    current_user: dict = Depends(get_current_user)
-):
-    db = request.app.state.db
+# @news_router.post("/new", dependencies=[Depends(require_admin)])
+# async def create_news(
+#     request: Request,
+#     title: str = Form(...),
+#     content: str = Form(...),
+#     priority: int = Form(3),
+#     expires_at_str: str = Form(None),
+#     current_user: dict = Depends(get_current_user)
+# ):
+#     db = request.app.state.db
     
-    expires_at = None
-    if expires_at_str:
-        try:
-            expires_at = datetime.fromisoformat(expires_at_str)
-        except ValueError:
-            pass
+#     expires_at = None
+#     if expires_at_str:
+#         try:
+#             expires_at = datetime.fromisoformat(expires_at_str)
+#         except ValueError:
+#             pass
 
-    news_data = {
-        "title": title.strip(), "content": content.strip(), "branch": "*",
-        "employment_type": ["*"], "priority": priority, "pinned": False,
-        "expires_at": expires_at, "created_at": datetime.utcnow()
-    }
-    result = await db.news.insert_one(news_data)
+#     news_data = {
+#         "title": title.strip(), "content": content.strip(), "branch": "*",
+#         "employment_type": ["*"], "priority": priority, "pinned": False,
+#         "expires_at": expires_at, "created_at": datetime.utcnow()
+#     }
+#     result = await db.news.insert_one(news_data)
     
-    # L'ID della nuova news viene salvato qui. Questa è la variabile da usare.
-    new_id = str(result.inserted_id)
+#     # L'ID della nuova news viene salvato qui. Questa è la variabile da usare.
+#     new_id = str(result.inserted_id)
 
-    # 1. Notifica WebSocket ai destinatari
-    payload = create_action_notification_payload('create', 'news', title, str(current_user["_id"]))
-    await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
+#     # 1. Notifica WebSocket ai destinatari
+#     payload = create_action_notification_payload('create', 'news', title, str(current_user["_id"]))
+#     await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
 
-    # --- CORREZIONE DEFINITIVA ---
-    # Il problema era nella riga seguente.
-    # Usiamo la variabile `new_id` che abbiamo appena ottenuto,
-    # invece di una variabile `news` inesistente.
-    await broadcast_resource_event("add", item_type="news", item_id=new_id, user_id=str(current_user["_id"]))
+#     # --- CORREZIONE DEFINITIVA ---
+#     # Il problema era nella riga seguente.
+#     # Usiamo la variabile `new_id` che abbiamo appena ottenuto,
+#     # invece di una variabile `news` inesistente.
+#     await broadcast_resource_event("add", item_type="news", item_id=new_id, user_id=str(current_user["_id"]))
     
-    # Aggiungi a home_highlights (ora che l'evento broadcast è corretto)
-    # Questa news sembra essere globale ("branch": "*", "employment_type": ["*"])
-    # Quindi il broadcast di refresh_home_highlights dovrebbe essere per tutti se è show_on_home
-    # Tuttavia, la news creata qui non ha un campo show_on_home esplicito,
-    # si assume che vada sempre in home_highlights.
-
-    news_doc_for_highlight = {
-        "type": "news", "object_id": new_id, "title": title, 
-        "branch": "*", "employment_type": ["*"], "created_at": datetime.utcnow()
-    }
-    await db.home_highlights.insert_one(news_doc_for_highlight)
-
-    # Assumendo che questa news vada sempre in home, inviamo il refresh.
-    # Poiché branch/emp_type sono "*", il broadcast sarà effettivamente per tutti.
-    try:
-        payload_highlight = {
-            "type": "refresh_home_highlights",
-            "data": {
-                "branch": "*", # Dalla logica di questa funzione
-                "employment_type": ["*"] # Dalla logica di questa funzione
-            }
-        }
-        await broadcast_message(payload_highlight, branch="*", employment_type=["*"])
-    except Exception as e:
-        print(f"[WebSocket] Errore broadcast refresh_home_highlights (create news global): {e}")
-
-    # 3. Conferma per l'admin
-    resp = Response(status_code=200)
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title)
-    return resp
-
-@news_router.post("/{news_id}/edit", dependencies=[Depends(require_admin)])
-async def edit_news_submit_global(
-    request: Request, news_id: str,
-    title: str = Form(...),
-    content: str = Form(...),
-    priority: int = Form(3),
-    expires_at_str: str = Form(None),
-    current_user: dict = Depends(get_current_user)
-):
-    db = request.app.state.db
+#     # Aggiungi a home_highlights (ora che l'evento broadcast è corretto)
+#     # Questa news sembra essere globale ("branch": "*", "employment_type": ["*"])
+#     # Quindi il broadcast di refresh_home_highlights dovrebbe essere per tutti se è show_on_home
+#     # Tuttavia, la news creata qui non ha un campo show_on_home esplicito,
+#     # si assume che vada sempre in home_highlights.
     
-    expires_at = None
-    if expires_at_str:
-        try:
-            expires_at = datetime.fromisoformat(expires_at_str)
-        except ValueError:
-            pass
+#     news_doc_for_highlight = {
+#         "type": "news", "object_id": new_id, "title": title,
+#         "branch": "*", "employment_type": ["*"], "created_at": datetime.utcnow()
+#     }
+#     await db.home_highlights.insert_one(news_doc_for_highlight)
 
-    await db.news.update_one(
-        {"_id": ObjectId(news_id)},
-        {"$set": {
-            "title": title.strip(),
-            "content": content.strip(),
-            "priority": priority,
-            "expires_at": expires_at
-        }}
-    )
+#     # Assumendo che questa news vada sempre in home, inviamo il refresh.
+#     # Poiché branch/emp_type sono "*", il broadcast sarà effettivamente per tutti.
+#     try:
+#         payload_highlight = {
+#             "type": "refresh_home_highlights",
+#             "data": {
+#                 "branch": "*", # Dalla logica di questa funzione
+#                 "employment_type": ["*"] # Dalla logica di questa funzione
+#             }
+#         }
+#         await broadcast_message(payload_highlight, branch="*", employment_type=["*"])
+#     except Exception as e:
+#         print(f"[WebSocket] Errore broadcast refresh_home_highlights (create news global): {e}")
 
-    # 1. Notifica WebSocket a TUTTI (escludendo l'admin)
-    payload = create_action_notification_payload('update', 'news', title, str(current_user["_id"]))
-    await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
+#     # 3. Conferma per l'admin
+#     resp = Response(status_code=200)
+#     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title)
+#     return resp
 
-    # 2. Aggiorna highlights e notifica per l'aggiornamento UI
-    await db.home_highlights.update_one({"object_id": news_id}, {"$set": {"title": title}})
-    await broadcast_resource_event("update", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
-
-    # 3. Conferma immediata SOLO per l'admin
-    updated_news = await db.news.find_one({"_id": ObjectId(news_id)})
-    resp = request.app.state.templates.TemplateResponse(
-        "news/news_row_partial.html", {"request": request, "n": updated_news, "user": current_user}
-    )
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title)
-    return resp
-
-@news_router.delete("/{news_id}", dependencies=[Depends(require_admin)])
-async def delete_news_global(
-    request: Request, news_id: str, current_user: dict = Depends(get_current_user)
-):
-    db = request.app.state.db
-    news_to_delete = await db.news.find_one({"_id": ObjectId(news_id)})
-    if not news_to_delete:
-        raise HTTPException(status_code=404)
+# @news_router.post("/{news_id}/edit", dependencies=[Depends(require_admin)])
+# async def edit_news_submit_global(
+#     request: Request, news_id: str,
+#     title: str = Form(...),
+#     content: str = Form(...),
+#     priority: int = Form(3),
+#     expires_at_str: str = Form(None),
+#     current_user: dict = Depends(get_current_user)
+# ):
+#     db = request.app.state.db
     
-    title = news_to_delete['title']
-    await db.news.delete_one({"_id": ObjectId(news_id)})
+#     expires_at = None
+#     if expires_at_str:
+#         try:
+#             expires_at = datetime.fromisoformat(expires_at_str)
+#         except ValueError:
+#             pass
+
+#     await db.news.update_one(
+#         {"_id": ObjectId(news_id)},
+#         {"$set": {
+#             "title": title.strip(),
+#             "content": content.strip(),
+#             "priority": priority,
+#             "expires_at": expires_at
+#         }}
+#     )
+
+#     # 1. Notifica WebSocket a TUTTI (escludendo l'admin)
+#     payload = create_action_notification_payload('update', 'news', title, str(current_user["_id"]))
+#     await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
+
+#     # 2. Aggiorna highlights e notifica per l'aggiornamento UI
+#     await db.home_highlights.update_one({"object_id": news_id}, {"$set": {"title": title}})
+#     await broadcast_resource_event("update", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
+
+#     # 3. Conferma immediata SOLO per l'admin
+#     updated_news = await db.news.find_one({"_id": ObjectId(news_id)})
+#     resp = request.app.state.templates.TemplateResponse(
+#         "news/news_row_partial.html", {"request": request, "n": updated_news, "user": current_user}
+#     )
+#     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title)
+#     return resp
+
+# @news_router.delete("/{news_id}", dependencies=[Depends(require_admin)])
+# async def delete_news_global(
+#     request: Request, news_id: str, current_user: dict = Depends(get_current_user)
+# ):
+#     db = request.app.state.db
+#     news_to_delete = await db.news.find_one({"_id": ObjectId(news_id)})
+#     if not news_to_delete:
+#         raise HTTPException(status_code=404)
     
-    # 1. Notifica WebSocket a TUTTI (escludendo l'admin)
-    payload = create_action_notification_payload('delete', 'news', title, str(current_user["_id"]))
-    await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
+#     title = news_to_delete['title']
+#     await db.news.delete_one({"_id": ObjectId(news_id)})
 
-    # 2. Rimuovi da highlights e notifica per l'aggiornamento UI
-    await db.home_highlights.delete_one({"type": "news", "object_id": news_id}) # Specificare type
+#     # 1. Notifica WebSocket a TUTTI (escludendo l'admin)
+#     payload = create_action_notification_payload('delete', 'news', title, str(current_user["_id"]))
+#     await broadcast_message(payload, exclude_user_id=str(current_user["_id"]))
 
-    # Poiché questa news è globale (branch: "*", employment_type: ["*"]),
-    # il refresh dovrebbe essere inviato a tutti se la news era in home_highlights.
-    # Non c'è un campo show_on_home esplicito qui, si assume che se è in home_highlights, era mostrata.
-    # La rimozione da db.home_highlights è già avvenuta.
-    # Se vogliamo inviare il refresh solo se era effettivamente lì, dovremmo sapere se delete_one ha avuto successo.
-    # Per ora, inviamo il refresh assumendo che potesse essere lì.
-    try:
-        payload_highlight = {
-            "type": "refresh_home_highlights",
-            "data": {
-                "branch": "*", # Dalla logica di questa funzione
-                "employment_type": ["*"] # Dalla logica di questa funzione
-            }
-        }
-        await broadcast_message(payload_highlight, branch="*", employment_type=["*"])
-    except Exception as e:
-        print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete news global): {e}")
+#     # 2. Rimuovi da highlights e notifica per l'aggiornamento UI
+#     await db.home_highlights.delete_one({"type": "news", "object_id": news_id}) # Specificare type
 
-    await broadcast_resource_event("delete", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
+#     # Poiché questa news è globale (branch: "*", employment_type: ["*"]),
+#     # il refresh dovrebbe essere inviato a tutti se la news era in home_highlights.
+#     # Non c'è un campo show_on_home esplicito qui, si assume che se è in home_highlights, era mostrata.
+#     # La rimozione da db.home_highlights è già avvenuta.
+#     # Se vogliamo inviare il refresh solo se era effettivamente lì, dovremmo sapere se delete_one ha avuto successo.
+#     # Per ora, inviamo il refresh assumendo che potesse essere lì.
+#     try:
+#         payload_highlight = {
+#             "type": "refresh_home_highlights",
+#             "data": {
+#                 "branch": "*", # Dalla logica di questa funzione
+#                 "employment_type": ["*"] # Dalla logica di questa funzione
+#             }
+#         }
+#         await broadcast_message(payload_highlight, branch="*", employment_type=["*"])
+#     except Exception as e:
+#         print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete news global): {e}")
 
-    # 3. Conferma immediata SOLO per l'admin
-    resp = Response(status_code=200)
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', title)
-    return resp
+#     await broadcast_resource_event("delete", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
+
+#     # 3. Conferma immediata SOLO per l'admin
+#     resp = Response(status_code=200)
+#     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', title)
+#     return resp
 
 @news_router.post("/{news_id}/pin", dependencies=[Depends(require_admin)])
 async def pin_news(request: Request, news_id: str, current_user: dict = Depends(get_current_user)):

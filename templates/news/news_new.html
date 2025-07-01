@@ -47,6 +47,18 @@
     {% include "components/branch_and_hire_selects.html" %}
   </fieldset>
 
+  <!-- Priorità -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="priority">Priorità (1 più alta, default 3)</label>
+    <input name="priority" id="priority" type="number" value="3" min="1" max="5" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+
+  <!-- Data Scadenza -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="expires_at_str">Data Scadenza (opzionale)</label>
+    <input name="expires_at_str" id="expires_at_str" type="date" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+
   <!-- Evidenza in home -->
   <label class="inline-flex items-center gap-2 text-sm text-slate-700">
     <input type="checkbox" id="show_on_home" name="show_on_home" value="true" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
