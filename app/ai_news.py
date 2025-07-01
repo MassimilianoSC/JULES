@@ -148,10 +148,17 @@ async def upload_ai_news(
             await broadcast_message(json.dumps(payload))
         # Aggiorna highlights home
         if show_on_home:
-            payload_highlight = {
-                "type": "refresh_home_highlights"
-            }
-            await broadcast_message(json.dumps(payload_highlight))
+            try:
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": {
+                        "branch": branch.strip(),
+                        "employment_type": employment_type_list
+                    }
+                }
+                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+            except Exception as e:
+                print(f"[WebSocket] Errore broadcast refresh_home_highlights (upload ai_news): {e}")
     except Exception as e:
         print("[WebSocket] Errore broadcast su creazione documento AI:", e)
 
@@ -271,12 +278,33 @@ async def edit_ai_news_submit(
             }
         }
         await broadcast_message(json.dumps(payload_update))
-        # Aggiorna highlights home SOLO se show_on_home
+        # Aggiorna highlights home
         if show_on_home:
-            payload_highlight = {
-                "type": "refresh_home_highlights"
-            }
-            await broadcast_message(json.dumps(payload_highlight))
+            try:
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": {
+                        "branch": branch.strip(),
+                        "employment_type": employment_type_list
+                    }
+                }
+                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+            except Exception as e:
+                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news show_on_home): {e}")
+        else: # Se show_on_home è false, e il doc POTREBBE essere stato in home
+            try:
+                # Invia refresh ai destinatari che POTEVANO vederlo
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": { # Usa i criteri attuali del documento
+                        "branch": branch.strip(),
+                        "employment_type": employment_type_list
+                    }
+                }
+                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+            except Exception as e:
+                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news not show_on_home): {e}")
+
         # Toast giallo e badge (a tutti)
         notifica = await db.notifiche.find_one({"id_risorsa": str(doc_id), "tipo": "ai_news"})
         if notifica:
@@ -424,6 +452,27 @@ async def delete_ai_news(
     )
 
     # 2. Aggiornamento highlights
+    was_on_home = doc.get("show_on_home", False) # Controlla se era in home PRIMA di eliminare da home_highlights
+
+    # La rimozione da db.home_highlights è già gestita sopra.
+    # Ora invia il broadcast mirato se necessario.
+    if was_on_home:
+        try:
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": doc.get("branch", "*"),
+                    "employment_type": doc.get("employment_type", ["*"])
+                }
+            }
+            await broadcast_message(
+                payload_highlight,
+                branch=doc.get("branch", "*"),
+                employment_type=doc.get("employment_type", ["*"])
+            )
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete ai_news): {e}")
+
     await broadcast_resource_event(
         event="delete",
         item_type="ai_news",
@@ -1195,6 +1244,29 @@ async def upload_ai_news(
 
     # 2. Aggiornamento highlights (se necessario)
     if show_on_home:
+        # Inserisci in home_highlights (mancava questa logica qui)
+        await db.home_highlights.update_one(
+            {"type": "ai_news", "object_id": new_id},
+            {"$set": {
+                "type": "ai_news", "object_id": new_id, "title": title,
+                "branch": branch, "employment_type": employment_type, # Assicurati che employment_type sia una lista
+                "created_at": datetime.utcnow()
+            }},
+            upsert=True
+        )
+        try:
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch,
+                    "employment_type": employment_type # employment_type è già una lista qui
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (upload ai_news global): {e}")
+
+        # L'evento broadcast_resource_event può rimanere se serve per altri scopi UI
         await broadcast_resource_event("add", item_type="ai_news", item_id=new_id, user_id=str(current_user["_id"]))
 
     # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
@@ -1233,6 +1305,38 @@ async def edit_ai_news(
     )
 
     # 2. Aggiornamento highlights
+    # Gestione home_highlights e broadcast mirato
+    db_ai_news = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)}) # Recupera per created_at
+    if show_on_home:
+        await db.home_highlights.update_one(
+            {"type": "ai_news", "object_id": ai_news_id},
+            {"$set": {
+                "type": "ai_news", "object_id": ai_news_id, "title": title,
+                "branch": branch, "employment_type": employment_type, # Assicurati che sia lista
+                "created_at": db_ai_news.get("created_at", datetime.utcnow())
+            }},
+            upsert=True
+        )
+        try:
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {"branch": branch, "employment_type": employment_type}
+            }
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news global show_on_home): {e}")
+    else:
+        delete_result = await db.home_highlights.delete_one({"type": "ai_news", "object_id": ai_news_id})
+        if delete_result.deleted_count > 0:
+            try:
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": {"branch": branch, "employment_type": employment_type}
+                }
+                await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+            except Exception as e:
+                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news global not show_on_home): {e}")
+
     await broadcast_resource_event("update", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
 
     # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
@@ -1272,6 +1376,24 @@ async def delete_ai_news(request: Request, ai_news_id: str, current_user: dict =
     )
 
     # 2. Aggiornamento highlights
+    was_on_home = ai_news_to_delete.get("show_on_home", False)
+    # La rimozione da home_highlights è implicita se non viene ricreato.
+    # Per coerenza, esplicitiamo la rimozione da home_highlights.
+    await db.home_highlights.delete_one({"type": "ai_news", "object_id": ObjectId(ai_news_id)})
+
+    if was_on_home:
+        try:
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch, # branch della ai_news eliminata
+                    "employment_type": employment_type # employment_type della ai_news eliminata
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete ai_news global): {e}")
+
     await broadcast_resource_event("delete", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
 
     # 3. Risposta di conferma SOLO per l'admin via HX-Trigger

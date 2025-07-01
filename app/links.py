@@ -70,12 +70,19 @@ async def create_link(
         })
         # Aggiorna highlights home
         try:
-            print(f"[DEBUG] Aggiornamento highlights")
-            payload_highlight = {
-                "type": "refresh_home_highlights"
-            }
-            await broadcast_message(payload_highlight)
-            print(f"[DEBUG] Highlights aggiornati")
+            if show_on_home:
+                print(f"[DEBUG] Aggiornamento highlights per link creato")
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": {
+                        "branch": branch,
+                        "employment_type": employment_type
+                    }
+                }
+                await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+                print(f"[DEBUG] Broadcast refresh_home_highlights inviato per i destinatari corretti.")
+            else:
+                print(f"[DEBUG] Il link non è show_on_home, nessun broadcast per refresh_home_highlights.")
         except Exception as e:
             print("[WebSocket] Errore broadcast su refresh highlights:", e)
 
@@ -242,7 +249,25 @@ async def delete_link(request: Request, link_id: str, current_user: dict = Depen
     )
 
     # 2. Aggiornamento highlights
-    await db.home_highlights.delete_one({"object_id": link_id})
+    was_on_home = link_to_delete.get("show_on_home", False)
+    await db.home_highlights.delete_one({"type": "link", "object_id": link_id}) # Assicurati di specificare anche il type
+
+    if was_on_home:
+        try:
+            # Invia refresh_home_highlights mirato a chi poteva vedere il link
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch, # branch del link eliminato
+                    "employment_type": employment_type # employment_type del link eliminato
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+            print(f"[DEBUG] Broadcast refresh_home_highlights per eliminazione link inviato a branch '{branch}', emp_type '{employment_type}'.")
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete link): {e}")
+
+    # Invia comunque l'evento generico di eliminazione risorsa
     await broadcast_resource_event(
         event="delete",
         item_type="link",
@@ -295,6 +320,51 @@ async def edit_link_submit(
     )
 
     # 2. Aggiornamento highlights
+    updated_link_for_highlight = await db.links.find_one({"_id": ObjectId(link_id)})
+
+    # Determina lo stato precedente di show_on_home e i criteri di filtro
+    # Questo è un po' complicato perché non abbiamo lo stato 'prima' della modifica direttamente qui.
+    # Per una logica precisa, bisognerebbe recuperare il link *prima* dell'update_one.
+    # Semplificazione: se `show_on_home` è true ora, o se era true (ipotizzando che `delete_one` da highlights avvenga solo se non più in home),
+    # allora inviamo un refresh.
+
+    if show_on_home:
+        await db.home_highlights.update_one(
+            {"type": "link", "object_id": link_id},
+            {"$set": {
+                "type": "link", "object_id": link_id, "title": title.strip(), "url": url.strip(),
+                "branch": branch.strip(), "employment_type": employment_type,
+                "created_at": updated_link_for_highlight.get("created_at", datetime.utcnow())
+            }},
+            upsert=True
+        )
+        # Invia broadcast mirato per refresh (aggiunta o modifica di un highlight esistente)
+        try:
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {"branch": branch.strip(), "employment_type": employment_type}
+            }
+            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type)
+        except Exception as e:
+            print(f"[WebSocket] Errore broadcast refresh_home_highlights (update link add/mod): {e}")
+    else:
+        # Se show_on_home è false, il link non deve essere/rimanere negli highlights
+        delete_result = await db.home_highlights.delete_one({"type": "link", "object_id": link_id})
+        if delete_result.deleted_count > 0: # Era in home ed è stato rimosso
+            # Invia broadcast mirato per refresh per notificare la rimozione
+            # È importante usare i criteri del link *prima* della modifica se sono cambiati,
+            # ma qui per semplicità usiamo quelli attuali (branch, employment_type).
+            # Se i criteri sono cambiati E show_on_home è diventato false, alcuni utenti potrebbero non ricevere
+            # il refresh per la rimozione. Una soluzione più robusta recupererebbe lo stato precedente.
+            try:
+                payload_highlight = {
+                    "type": "refresh_home_highlights",
+                    "data": {"branch": branch.strip(), "employment_type": employment_type}
+                }
+                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type)
+            except Exception as e:
+                print(f"[WebSocket] Errore broadcast refresh_home_highlights (update link remove): {e}")
+
     await broadcast_resource_event(
         event="update",
         item_type="link",

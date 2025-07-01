@@ -752,9 +752,34 @@ async def list_documents(
 # ---- UPLOAD (solo admin) -------------------------------------------
 
 @app.get("/documents/upload", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
-async def upload_form(request: Request):
-    template = "documents/upload_partial.html" if request.headers.get("hx-request") == "true" else "documents/upload.html"
-    return templates.TemplateResponse(template, {"request": request})
+async def upload_form(request: Request, db: AsyncIOMotorClient = Depends(get_db)): # Aggiunto db dependency
+    context = {"request": request}
+    if request.headers.get("hx-request") == "true":
+        template_name = "documents/upload_partial.html"
+        # Recupera branches e hire_types per il partial, come facciamo per altri form partial
+        # Questo presuppone che tu abbia una collezione 'branches' e 'hire_types' o costanti
+        branches = await db.branches.distinct("name") # Esempio, adatta se necessario
+        if not branches: branches = ["HQE", "HQ ITALIA", "HQIA", "*"] # Fallback
+
+        hire_types = await db.hire_types.find().to_list(None) # Esempio, adatta se necessario
+        if not hire_types: hire_types = [{"id": "*", "label": "Tutte"}] # Fallback
+
+        context["branches"] = branches
+        context["hire_types"] = hire_types
+    else:
+        template_name = "documents/upload.html"
+        # Anche il form completo potrebbe aver bisogno di branches e hire_types se li usa direttamente
+        # o tramite l'include "components/branch_and_hire_selects.html"
+        branches = await db.branches.distinct("name")
+        if not branches: branches = ["HQE", "HQ ITALIA", "HQIA", "*"]
+
+        hire_types = await db.hire_types.find().to_list(None)
+        if not hire_types: hire_types = [{"id": "*", "label": "Tutte"}]
+
+        context["branches"] = branches
+        context["hire_types"] = hire_types
+
+    return templates.TemplateResponse(template_name, context)
 
 @app.post("/documents/upload", dependencies=[Depends(require_admin)])
 async def upload_submit(
