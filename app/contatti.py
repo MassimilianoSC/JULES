@@ -70,9 +70,17 @@ async def create_contact(
         # --- AGGIUNTA BROADCAST HIGHLIGHT ---
         try:
             payload_highlight = {
-                "type": "refresh_home_highlights"
+                "type": "refresh_home_highlights",
+                # Includiamo branch e employment_type per il filtraggio nel broadcast
+                # Questi verranno usati da ws_broadcast.py se il tipo è refresh_home_highlights
+                "data": {
+                    "branch": branch,
+                    "employment_type": employment_type_list
+                }
             }
-            await broadcast_message(payload_highlight)
+            # Passiamo branch e employment_type anche come argomenti diretti a broadcast_message
+            # per assicurarci che ws_broadcast li usi per filtrare i destinatari.
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type_list)
         except Exception as e:
             print("[WebSocket] Errore broadcast su update_contact_highlight:", e)
         # --- FINE AGGIUNTA ---
