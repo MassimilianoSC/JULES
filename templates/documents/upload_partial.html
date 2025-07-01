@@ -18,32 +18,32 @@
                  required>
         </div>
 
+        <!-- Tags -->
         <div>
-          <label for="description" class="label">Descrizione</label>
-          <textarea name="description"
-                    id="description"
-                    class="input"
-                    rows="3"></textarea>
+          <label for="tags_partial" class="label">Tags (separati da virgola)</label>
+          <input name="tags" id="tags_partial" type="text" class="input" placeholder="es. HR, Formazione, Sicurezza">
         </div>
 
-        <div>
-          <label for="category" class="label">Categoria</label>
-          <select name="category"
-                  id="category"
-                  class="select"
-                  required>
-            <option value="">Seleziona categoria...</option>
-            <option value="HQ ITALIA">HQ ITALIA</option>
-            <option value="HQE">HQE</option>
-            <option value="ai_news">AI News</option>
-          </select>
+        <!-- Destinatario -->
+        <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+          <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+          {# Assicurarsi che le variabili 'branches' e 'hire_types' siano passate a questo template #}
+          {% include "components/branch_and_hire_selects.html" %}
+        </fieldset>
+
+        <!-- Evidenza in home -->
+        <div class="mt-4">
+          <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" id="show_on_home_docs_partial" name="show_on_home" value="true" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+            Metti in evidenza sulla home
+          </label>
         </div>
 
         <div>
           <label for="file" class="label">File</label>
           <input type="file"
                  name="file"
-                 id="file"
+                 id="file_partial" {# Modificato ID per evitare conflitti #}
                  class="input"
                  required>
         </div>

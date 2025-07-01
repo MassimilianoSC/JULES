@@ -330,24 +330,32 @@ async def update_contact(
     bu: str = Form(None),
     team: str = Form(None),
     branch: str = Form(...),
-    employment_type: str = Form(...),
+    employment_type: str = Form(...), # Questo dovrebbe probabilmente essere una lista come in create_contact se il form lo permette
+    work_branch: str = Form(None), # Aggiunto work_branch
     show_on_home: Annotated[bool, Form()] = False,
     current_user: dict = Depends(get_current_user)
 ):
     db = request.app.state.db
+
+    # Prepara i dati da aggiornare
+    update_data = {
+        "name": name.strip(),
+        "email": email.strip(),
+        "phone": (phone or "").strip(),
+        "bu": (bu or "").strip() or None,
+        "team": team.strip() if team else None,
+        "branch": branch, # branch di destinazione
+        # employment_type dovrebbe essere gestito come lista se il form invia multipli valori o per coerenza
+        "employment_type": [employment_type] if isinstance(employment_type, str) else (employment_type or []),
+        "show_on_home": bool(show_on_home),
+        "updated_at": datetime.utcnow(),
+    }
+    if work_branch: # Aggiungi work_branch solo se fornito
+        update_data["work_branch"] = work_branch.strip()
+
     await db.contatti.update_one(
         {"_id": ObjectId(contact_id)},
-        {"$set": {
-            "name": name.strip(),
-            "email": email.strip(),
-            "phone": (phone or "").strip(),
-            "bu": (bu or "").strip() or None,
-            "team": team.strip() if team else None,
-            "branch": branch,
-            "employment_type": employment_type,
-            "show_on_home": bool(show_on_home),
-            "updated_at": datetime.utcnow(),
-        }}
+        {"$set": update_data}
     )
     c = await db.contatti.find_one({"_id": ObjectId(contact_id)})
     html = request.app.state.templates.TemplateResponse(

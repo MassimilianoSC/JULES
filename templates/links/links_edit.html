@@ -17,12 +17,6 @@
       <input required name="url" id="url" type="url" value="{{ l.url }}" class="input-text w-full">
     </div>
 
-    <!-- Descrizione -->
-    <div>
-      <label class="block mb-1 font-medium text-slate-700" for="description">Descrizione</label>
-      <textarea name="description" id="description" rows="3" class="input-text w-full">{{ l.description }}</textarea>
-    </div>
-
     <!-- Filiale & Tipologia (pre-selected) -->
     {% set branch = l.branch %}
     {% set employment_type = l.employment_type %}
