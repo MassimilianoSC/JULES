@@ -145,12 +145,20 @@ async def upload_document(
         print(f"[DEBUG] Broadcast completato")
         
         # 7. Aggiorna highlights home
-        print(f"[DEBUG] Aggiornamento highlights")
-        payload_highlight = {
-            "type": "refresh_home_highlights"
-        }
-        await broadcast_message(payload_highlight)
-        print(f"[DEBUG] Highlights aggiornati")
+        print(f"[DEBUG] Aggiornamento highlights per creazione documento")
+        if show_on_home: # Invia il broadcast solo se il documento è effettivamente in home
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch.strip(),
+                    "employment_type": employment_type_list
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+            print(f"[DEBUG] Broadcast refresh_home_highlights inviato per i destinatari corretti.")
+        else:
+            print(f"[DEBUG] Il documento non è show_on_home, nessun broadcast per refresh_home_highlights.")
+
     except Exception as e:
         print("[WebSocket] Errore broadcast su creazione documento:", e)
 
@@ -270,12 +278,33 @@ async def edit_document_submit(
         print(f"[DEBUG] Broadcast completato")
         
         # 5. Aggiorna highlights home
-        print(f"[DEBUG] Aggiornamento highlights")
-        payload_highlight = {
-            "type": "refresh_home_highlights"
-        }
-        await broadcast_message(payload_highlight)
-        print(f"[DEBUG] Highlights aggiornati")
+        print(f"[DEBUG] Aggiornamento highlights per modifica documento")
+        if show_on_home is not None: # Invia il broadcast solo se il documento è effettivamente in home
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch.strip(),
+                    "employment_type": employment_type_list
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+            print(f"[DEBUG] Broadcast refresh_home_highlights inviato per i destinatari corretti.")
+        else:
+            # Se show_on_home è False (o None qui, che significa che il checkbox non era spuntato),
+            # e il documento POTREBBE essere stato precedentemente in home,
+            # inviamo comunque un refresh generico ai destinatari che POTEVANO vederlo,
+            # così la loro home si aggiorna rimuovendolo.
+            # La logica di `home_highlights_partial` poi non lo includerà.
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                 "data": { # Usiamo i valori del documento per raggiungere chi lo vedeva prima
+                    "branch": updated.get("branch", "*"), # branch precedente o attuale
+                    "employment_type": updated.get("employment_type", ["*"])
+                }
+            }
+            await broadcast_message(payload_highlight, branch=updated.get("branch", "*"), employment_type=updated.get("employment_type", ["*"]))
+            print(f"[DEBUG] Documento non più show_on_home, inviato refresh_home_highlights per la rimozione.")
+
     except Exception as e:
         print("[WebSocket] Errore broadcast su modifica documento:", e)
 
@@ -423,12 +452,21 @@ async def delete_document(request: Request, doc_id: str, current_user: dict = De
 
     # 3. Aggiorna highlights home
     try:
-        payload_highlight = {
-            "type": "refresh_home_highlights"
-        }
-        await broadcast_message(payload_highlight)
+        # Se il documento era show_on_home, invia un broadcast mirato per refresh.
+        # Gli utenti che non avevano accesso a questo branch/emp_type non riceveranno il segnale.
+        # Gli utenti che avevano accesso lo riceveranno e la loro home si aggiornerà (rimuovendo il doc).
+        if doc.get("show_on_home"):
+            payload_highlight = {
+                "type": "refresh_home_highlights",
+                "data": {
+                    "branch": branch, # branch del documento eliminato
+                    "employment_type": employment_type # employment_type del documento eliminato
+                }
+            }
+            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
+            print(f"[DEBUG] Broadcast refresh_home_highlights per eliminazione inviato a branch '{branch}', emp_type '{employment_type}'.")
     except Exception as e:
-        print("[WebSocket] Errore broadcast su refresh highlights:", e)
+        print("[WebSocket] Errore broadcast su refresh highlights dopo eliminazione documento:", e)
 
     # 4. Conferma per l'admin
     print(f"[DEBUG] Creazione conferma admin")
