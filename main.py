@@ -308,8 +308,39 @@ async def home(request: Request, user = Depends(get_current_user)):
 async def home_highlights_partial(request: Request, user = Depends(get_current_user)):
     db = request.app.state.db
     
-    # Recupera gli highlights filtrati per branch e hire_type
-    highlights = await db.home_highlights.find().to_list(length=None)
+    # Definisci il filtro base per gli highlights in base al ruolo e ai permessi dell'utente
+    user_branch = user.get("branch")
+    user_employment_type = user.get("employment_type")
+
+    highlights_filter = {}
+    if user.get("role") != "admin":
+        conditions = []
+        # Filtro per branch
+        if user_branch:
+            conditions.append({"$or": [{"branch": "*"}, {"branch": user_branch}]})
+        else: # Utente senza branch specifico, può vedere solo quelli per tutti '*'
+            conditions.append({"branch": "*"})
+
+        # Filtro per employment_type
+        if user_employment_type:
+            conditions.append({"$or": [
+                {"employment_type": "*"},
+                {"employment_type": user_employment_type}, # Caso semplice: stringa singola
+                {"employment_type": {"$elemMatch": {"$in": [user_employment_type, "*"]}}}, # Caso lista
+                {"employment_type": {"$exists": False}},
+                {"employment_type": []}
+            ]})
+        else: # Utente senza employment_type specifico
+             conditions.append({"$or": [
+                {"employment_type": "*"},
+                {"employment_type": {"$exists": False}},
+                {"employment_type": []}
+            ]})
+
+        if conditions:
+            highlights_filter["$and"] = conditions
+
+    highlights = await db.home_highlights.find(highlights_filter).sort([("created_at", DESCENDING)]).to_list(length=None)
     
     # Converti gli ObjectId in stringhe e uniforma l'uso di object_id
     for h in highlights:
@@ -329,19 +360,15 @@ async def home_highlights_partial(request: Request, user = Depends(get_current_u
             if "id" in pin:
                 pin["id"] = str(pin["id"])
     
-    # Filtra per branch e tipo di assunzione
-    filtered_highlights = [
-        h for h in highlights
-        if (not h.get("branch") or user["branch"] in h["branch"]) and
-           (not h.get("employment_type") or user["employment_type"] in h["employment_type"])
-    ]
+    # Il filtraggio è già stato fatto dalla query MongoDB, quindi `highlights` ora contiene solo quelli pertinenti.
+    # Rimuoviamo il filtraggio Python ridondante.
     
     return templates.TemplateResponse(
-        "partials/home_highlights.html",
+        "partials/home_highlights.html", # Assicurati che il nome del template sia corretto
         {
             "request": request,
             "user": user,
-            "highlights": filtered_highlights
+            "highlights": highlights # Passa direttamente gli highlights filtrati dal DB
         }
     )
 
