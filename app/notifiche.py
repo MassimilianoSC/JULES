@@ -237,7 +237,7 @@ async def notifiche_count_link(request: Request, user=Depends(get_current_user))
     count = await db.notifiche.count_documents(q)
     return request.app.state.templates.TemplateResponse(
         "components/nav_links_badge.html",
-        {"request": request, "unread_link_count": "" if count == 0 else count, "u": user}
+        {"request": request, "unread_links_count": "" if count == 0 else count, "u": user} # Corretto: unread_links_count
     )
 
 
