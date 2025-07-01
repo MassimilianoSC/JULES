@@ -63,15 +63,18 @@ function cleanupTypingState(olderThan = 3_000) {
 }
 
 /* ----- Stats Management ------------------------------------------ */
-export function updateStats(newsId, stats) {
-  if (!newsId || !stats) return;
+// Rimuoviamo la manipolazione DOM da qui. Se necessario, chi chiama questa logica
+// (o un watcher sullo stato se fosse un sistema reattivo più complesso)
+// dovrebbe emettere un evento per dom-renderer.
+// export function updateStats(newsId, stats) {
+//   if (!newsId || !stats) return;
   
-  // Aggiorna i contatori nell'UI
-  Object.entries(stats).forEach(([key, value]) => {
-    const counter = document.querySelector(`#${key}-${newsId} .stats-count`);
-    if (counter) counter.textContent = value;
-  });
-}
+//   // Aggiorna i contatori nell'UI
+//   Object.entries(stats).forEach(([key, value]) => {
+//     const counter = document.querySelector(`#${key}-${newsId} .stats-count`);
+//     if (counter) counter.textContent = value;
+//   });
+// }
 
 // ––– API pubblica –––––––––––––––––––––––––––––––––––––––––––––––––––––––– //
 export default {
@@ -85,7 +88,7 @@ export default {
   updateLike,
   setTyping,
   cleanupTypingState,
-  updateStats,
+  // updateStats, // Rimosso dall'export pubblico, la gestione UI va a dom-renderer
 };
 
 async function bootstrapChat() {

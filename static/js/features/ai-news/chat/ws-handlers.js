@@ -26,47 +26,77 @@ function updateBadge(newsId, total) {
   }
 }
 
-eventBus.on('ws:ai-news', p => {
+eventBus.on('ws:ai-news', p => { // p è il payload del messaggio WebSocket
   try {
-    const { type } = p || {};
+    const { type } = p || {}; // p.type è 'comment/add', 'comment/delete', etc.
     if (!type) throw new Error('payload.type missing');
 
     switch (type) {
-      case 'comment/add':
-        chatState.addComment(p.comment);
-        updateBadge(p.news_id, p.total);
-        eventBus.emit('chat:dom:add', p.comment);
+      case 'comment/add': // p.comment dovrebbe contenere news_id e parent_id (se è una risposta)
+        chatState.addComment(p.data.comment); // Assumendo che il payload WS sia {type: 'comment/add', data: { news_id: ..., comment: {...} }}
+        eventBus.emit('chat:badge:update', { newsId: p.data.news_id, totalComments: p.data.total_comments });
+        eventBus.emit('chat:dom:add', { commentData: p.data.comment, newsId: p.data.news_id }); // Passa newsId
         break;
 
       case 'comment/delete':
-        chatState.removeComment(p.comment_id);
-        document.querySelector(`[data-id="${p.comment_id}"]`)?.remove();
-        updateBadge(p.news_id, p.total);
+        chatState.removeComment(p.data.comment_id);
+        eventBus.emit('chat:dom:remove', { commentId: p.data.comment_id, newsId: p.data.news_id }); // Passa newsId
+        eventBus.emit('chat:badge:update', { newsId: p.data.news_id, totalComments: p.data.total_comments });
         break;
 
       case 'reply/add':
-        // TODO: implementare se usiamo il contatore aggregato
+        if (p.data && p.data.reply && p.data.parent_id && p.data.news_id) {
+          chatState.addComment(p.data.reply);
+          eventBus.emit('chat:dom:add', { commentData: p.data.reply, newsId: p.data.news_id }); // dom-renderer usa parent_id da commentData
+          eventBus.emit('chat:dom:update_reply_count', {
+            commentId: p.data.parent_id,
+            newCount: p.data.parent_replies_count,
+            newsId: p.data.news_id // Aggiunto newsId per coerenza, anche se dom-renderer potrebbe non usarlo qui
+          });
+        } else {
+          console.error('[ws-handlers] Payload reply/add malformato:', p);
+        }
         break;
 
       case 'reply/delete':
-        // TODO: implementare se usiamo il contatore aggregato
+        if (p.data && p.data.reply_id && p.data.parent_id && p.data.news_id) {
+          chatState.removeComment(p.data.reply_id);
+          eventBus.emit('chat:dom:remove', { commentId: p.data.reply_id, newsId: p.data.news_id });
+          eventBus.emit('chat:dom:update_reply_count', {
+            commentId: p.data.parent_id,
+            newCount: p.data.parent_replies_count,
+            newsId: p.data.news_id // Aggiunto newsId
+          });
+        } else {
+          console.error('[ws-handlers] Payload reply/delete malformato:', p);
+        }
         break;
 
-      case 'like':
-        chatState.updateLike(p.commentId, p.likes);
-        eventBus.emit('chat:dom:update-like', {
-          id   : p.commentId,
-          likes: p.likes.length,
-          mine : p.likes.includes(window.currentUserId),
-        });
+      case 'like': // p dovrebbe essere { type: 'like', newsId: ..., commentId: ..., likes: [...] }
+        if (p.newsId && p.commentId && Array.isArray(p.likes)) {
+            chatState.updateLike(p.commentId, p.likes);
+            eventBus.emit('chat:dom:update-like', {
+              id   : p.commentId,
+              likes: p.likes.length,
+              mine : p.likes.includes(window.currentUserId),
+              newsId: p.newsId // Aggiunto newsId
+            });
+        } else {
+            console.error('[ws-handlers] Payload like malformato:', p);
+        }
         break;
 
-      case 'typing':
-        chatState.setTyping(p.userId, p.isTyping);
-        eventBus.emit('chat:dom:typing', {
-          userId : p.userId,
-          isTyping: p.isTyping,
-        });
+      case 'typing': // p dovrebbe essere { type: 'typing', newsId: ..., userId: ..., isTyping: true/false }
+        if (p.newsId && p.userId !== undefined && p.isTyping !== undefined) {
+            chatState.setTyping(p.userId, p.isTyping);
+            eventBus.emit('chat:dom:typing', {
+              userId : p.userId,
+              isTyping: p.isTyping,
+              newsId: p.newsId // Aggiunto newsId
+            });
+        } else {
+            console.error('[ws-handlers] Payload typing malformato:', p);
+        }
         break;
 
       default:

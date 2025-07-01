@@ -5,50 +5,14 @@
 {% endblock %}
 
 {% block content %}
-<!-- DEBUG: RENDERED BY comment_single.html -->
-<div class="comment-container flex items-start space-x-3">
-    <img src="{{ comment.author.avatar if comment.author and comment.author.avatar else '/static/img/avatar-default.png' }}" 
-         alt="Avatar" 
-         class="comment-avatar">
-    <div class="flex-1">
-      <div class="flex items-center justify-between">
-        <div class="text-sm font-medium text-gray-900">{{ comment.author.name }}</div>
-        <div class="text-xs text-gray-500">
-          {% if comment.created_at is string %}
-            {{ comment.created_at.split('.')[0].replace('T', ' ') }}
-          {% else %}
-            {{ comment.created_at.strftime('%d/%m/%Y %H:%M') if comment.created_at else '' }}
-          {% endif %}
-        </div>
-      </div>
-      <div class="mt-1 prose prose-sm max-w-none text-gray-800">{{ comment.content | markdown | safe }}</div>
-      <div class="mt-2 flex items-center space-x-4 text-sm">
-        <button 
-          data-like-btn
-          data-comment-id="{{ comment._id }}"
-          class="flex items-center space-x-1 text-gray-500 hover:text-blue-600"
-          aria-label="Mi piace">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
-          </svg>
-          <span>{{ comment.likes | default(0) }}</span>
-        </button>
-        <button 
-          data-reply-btn
-          data-comment-id="{{ comment._id }}"
-          class="text-sm text-gray-500 hover:text-gray-700">
-          Rispondi
-        </button>
-        {% if user and (user.role == 'admin' or user._id|string == comment.user_id) %}
-        <button 
-          data-delete-comment-btn
-          data-comment-id="{{ comment._id }}"
-          class="ml-2 text-sm text-red-500 hover:text-red-700">
-          Elimina
-        </button>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+<div class="max-w-2xl mx-auto py-8"> {# Aggiunto un container per centrare e dare spazio #}
+    {% if comment %}
+        {# Assicurati che news_id sia disponibile nel contesto se _comment_item lo richiede per azioni come like/reply #}
+        {# Se comment_single è per un commento "stand-alone", news_id potrebbe non essere rilevante o disponibile #}
+        {# Per ora, assumo che news_id sia disponibile o che _comment_item lo gestisca opzionalmente #}
+        {% include "ai_news/_comment_item.html" with context comment=comment user=user news_id=comment.news_id|string %}
+    {% else %}
+        <p class="text-center text-gray-500">Commento non trovato.</p>
+    {% endif %}
 </div>
 {% endblock %} 

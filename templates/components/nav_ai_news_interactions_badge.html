@@ -1,0 +1,12 @@
+<div id="nav-ai-news-interactions-badge-container">
+  {% if unread_ai_interaction_count %}
+  <span id="nav-ai-news-interactions-badge"
+        hx-get="/notifiche/count/ai_interaction"
+        hx-trigger="notifications.refresh from:body"
+        hx-credentials="include"
+        hx-swap="innerHTML"
+        class="absolute -top-2 -right-2 bg-purple-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+    {{ unread_ai_interaction_count }}
+  </span>
+  {% endif %}
+</div>
