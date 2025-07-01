@@ -109,6 +109,21 @@ async def create_news(
         # Invia anche l'evento generico di aggiunta risorsa - MANTENUTO se serve per altri aggiornamenti UI (es. lista /news)
     await broadcast_resource_event("add", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
 
+    # Invia messaggio WebSocket per il Ticker
+    try:
+        ticker_payload = {
+            "type": "news_ticker_add",
+            "data": {
+                "id": news_id,
+                "title": news_data['title'],
+                "url_news": f"/news/{news_id}" # o la route corretta per la visualizzazione singola news
+            }
+        }
+        # Invia a tutti (o filtra se il ticker ha logica di visibilità specifica)
+        await broadcast_message(ticker_payload, branch=news_data['branch'], employment_type=news_data['employment_type'])
+    except Exception as e:
+        print(f"[WebSocket] Errore broadcast news_ticker_add: {e}")
+
     # 3. Risposta con conferma admin e redirect
     resp = Response(status_code=200)
     # Prima mostra la conferma
@@ -337,6 +352,20 @@ async def edit_news_submit(
     #         print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit news - not show_on_home): {e}")
 
     await broadcast_resource_event("update", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
+
+    # Invia messaggio WebSocket per il Ticker
+    try:
+        ticker_payload = {
+            "type": "news_ticker_update",
+            "data": {
+                "id": news_id,
+                "title": updated['title'], # Usa il titolo aggiornato
+                "url_news": f"/news/{news_id}"
+            }
+        }
+        await broadcast_message(ticker_payload, branch=updated['branch'], employment_type=updated['employment_type'])
+    except Exception as e:
+        print(f"[WebSocket] Errore broadcast news_ticker_update: {e}")
     # --- FINE AGGIUNTA ---
 
     # Toast di notifica
@@ -417,6 +446,19 @@ async def delete_news(request: Request, news_id: str, current_user: dict = Depen
 
     await broadcast_resource_event("delete", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
     
+    # Invia messaggio WebSocket per il Ticker
+    try:
+        ticker_payload = {
+            "type": "news_ticker_remove",
+            "data": { "id": news_id }
+        }
+        # Invia a tutti (o filtra se il ticker aveva logica di visibilità specifica)
+        # Dato che la news è eliminata, i filtri branch/emp_type della news eliminata sono appropriati
+        # per notificare gli stessi utenti che la vedevano.
+        await broadcast_message(ticker_payload, branch=news.get("branch", "*"), employment_type=news.get("employment_type", ["*"]))
+    except Exception as e:
+        print(f"[WebSocket] Errore broadcast news_ticker_remove: {e}")
+
     # 3. Conferma per l'admin
     resp = Response(status_code=200)
     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', news.get('title', ''))
