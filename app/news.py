@@ -72,31 +72,31 @@ async def create_news(
         exclude_user_id=str(current_user["_id"])
     )
 
-    # 2. Aggiornamento highlights (se necessario)
-    if show_on_home:
-        await db.home_highlights.insert_one({
-            "type": "news",
-            "object_id": news_id,
-            "title": title.strip(),
-            "created_at": datetime.utcnow(),
-            "branch": branch.strip(), # branch della news
-            "employment_type": employment_type_list # employment_type della news
-        })
-        # Invia broadcast mirato per refresh_home_highlights
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": branch.strip(),
-                    "employment_type": employment_type_list
-                }
-            }
-            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (create news): {e}")
+    # 2. Aggiornamento highlights (se necessario) - RIMOSSO perché le news non vanno più in home_highlights come card
+    # if show_on_home:
+    #     await db.home_highlights.insert_one({
+    #         "type": "news",
+    #         "object_id": news_id,
+    #         "title": title.strip(),
+    #         "created_at": datetime.utcnow(),
+    #         "branch": branch.strip(), # branch della news
+    #         "employment_type": employment_type_list # employment_type della news
+    #     })
+    #     # Invia broadcast mirato per refresh_home_highlights - RIMOSSO
+    #     try:
+    #         payload_highlight = {
+    #             "type": "refresh_home_highlights",
+    #             "data": {
+    #                 "branch": branch.strip(),
+    #                 "employment_type": employment_type_list
+    #             }
+    #         }
+    #         await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+    #     except Exception as e:
+    #         print(f"[WebSocket] Errore broadcast refresh_home_highlights (create news): {e}")
 
-        # Invia anche l'evento generico di aggiunta risorsa
-        await broadcast_resource_event("add", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
+        # Invia anche l'evento generico di aggiunta risorsa - MANTENUTO se serve per altri aggiornamenti UI (es. lista /news)
+    await broadcast_resource_event("add", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
 
     # 3. Risposta con conferma admin e redirect
     resp = Response(status_code=200)
@@ -238,21 +238,22 @@ async def edit_news_submit(
         }}
     )
     updated = await db.news.find_one({"_id": ObjectId(news_id)})
-    if show_on_home_bool:
-        await db.home_highlights.update_one(
-            {"type": "news", "object_id": ObjectId(news_id)},
-            {"$set": {
-                "type": "news",
-                "object_id": ObjectId(news_id),
-                "title": title.strip(),
-                "created_at": datetime.utcnow(),
-                "branch": branch.strip(),
-                "employment_type": employment_type_list
-            }},
-            upsert=True
-        )
-    else:
-        await db.home_highlights.delete_one({"type": "news", "object_id": ObjectId(news_id)})
+    # RIMOSSA logica di interazione con db.home_highlights per le news
+    # if show_on_home_bool:
+    #     await db.home_highlights.update_one(
+    #         {"type": "news", "object_id": ObjectId(news_id)},
+    #         {"$set": {
+    #             "type": "news",
+    #             "object_id": ObjectId(news_id),
+    #             "title": title.strip(),
+    #             "created_at": datetime.utcnow(),
+    #             "branch": branch.strip(),
+    #             "employment_type": employment_type_list
+    #         }},
+    #         upsert=True
+    #     )
+    # else:
+    #     await db.home_highlights.delete_one({"type": "news", "object_id": ObjectId(news_id)})
     resp = request.app.state.templates.TemplateResponse(
         "news/news_row_partial.html",
         {"request": request, "n": updated, "user": request.state.user}
@@ -276,43 +277,32 @@ async def edit_news_submit(
         employment_type=employment_type_list,
         exclude_user_id=str(current_user["_id"])
     )
-    # 2. Aggiornamento highlights
-    # La logica di aggiornamento di home_highlights è già presente prima nel codice della funzione.
-    # Ora aggiungiamo il broadcast mirato per refresh_home_highlights.
-    if show_on_home_bool:
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": branch.strip(),
-                    "employment_type": employment_type_list
-                }
-            }
-            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit news - show_on_home): {e}")
-    elif not show_on_home_bool: # Se la news è stata rimossa dalla home
-        # Bisogna notificare chi la vedeva prima, basandosi sui vecchi criteri se possibile,
-        # o sui nuovi se i criteri non sono cambiati ma solo lo stato di show_on_home.
-        # Per semplicità, usiamo i criteri attuali (branch.strip(), employment_type_list)
-        # assumendo che se non è più in home, chiunque la vedesse con quei criteri deve refreshare.
-        # Una logica più complessa recupererebbe lo stato *prima* della modifica.
-        try:
-            # Verifica se era precedentemente in home_highlights
-            # Questa verifica è implicita dal fatto che `delete_one` non fallisce se non trova nulla.
-            # Ma per inviare il broadcast solo se c'era, dovremmo fare una find prima di delete_one.
-            # Per ora, inviamo comunque il refresh se show_on_home è false.
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": { # Utilizza i criteri attuali della news
-                    "branch": branch.strip(),
-                    "employment_type": employment_type_list
-                }
-            }
-            await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-            print(f"[DEBUG] News non più show_on_home, inviato refresh_home_highlights per la rimozione.")
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit news - not show_on_home): {e}")
+    # 2. Aggiornamento highlights - RIMOSSA logica broadcast refresh_home_highlights per le news
+    # if show_on_home_bool:
+    #     try:
+    #         payload_highlight = {
+    #             "type": "refresh_home_highlights",
+    #             "data": {
+    #                 "branch": branch.strip(),
+    #                 "employment_type": employment_type_list
+    #             }
+    #         }
+    #         await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+    #     except Exception as e:
+    #         print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit news - show_on_home): {e}")
+    # elif not show_on_home_bool:
+    #     try:
+    #         payload_highlight = {
+    #             "type": "refresh_home_highlights",
+    #             "data": {
+    #                 "branch": branch.strip(),
+    #                 "employment_type": employment_type_list
+    #             }
+    #         }
+    #         await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+    #         print(f"[DEBUG] News non più show_on_home, inviato refresh_home_highlights per la rimozione.")
+    #     except Exception as e:
+    #         print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit news - not show_on_home): {e}")
 
     await broadcast_resource_event("update", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
     # --- FINE AGGIUNTA ---
@@ -371,27 +361,27 @@ async def delete_news(request: Request, news_id: str, current_user: dict = Depen
     )
     
     # 2. Aggiornamento highlights e card fissa in home
-    # Rimuovi da home_highlights (la riga è duplicata più avanti, ma la logica di broadcast va qui)
-    was_on_home = news.get("show_on_home", False)
-    # L'effettiva rimozione da db.home_highlights avviene più avanti nella versione originale del codice.
-    # Qui ci concentriamo sull'inviare il broadcast *se* era in home.
+    # Rimuovi da home_highlights
+    await db.home_highlights.delete_one({"type": "news", "object_id": ObjectId(news_id)}) # Assicuriamoci che venga rimosso
 
-    if was_on_home:
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": news.get("branch", "*"),
-                    "employment_type": news.get("employment_type", ["*"])
-                }
-            }
-            await broadcast_message(
-                payload_highlight,
-                branch=news.get("branch", "*"),
-                employment_type=news.get("employment_type", ["*"])
-            )
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete news): {e}")
+    # RIMOSSA logica broadcast refresh_home_highlights per le news
+    # was_on_home = news.get("show_on_home", False)
+    # if was_on_home:
+    #     try:
+    #         payload_highlight = {
+    #             "type": "refresh_home_highlights",
+    #             "data": {
+    #                 "branch": news.get("branch", "*"),
+    #                 "employment_type": news.get("employment_type", ["*"])
+    #             }
+    #         }
+    #         await broadcast_message(
+    #             payload_highlight,
+    #             branch=news.get("branch", "*"),
+    #             employment_type=news.get("employment_type", ["*"])
+    #         )
+    #     except Exception as e:
+    #         print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete news): {e}")
 
     await broadcast_resource_event("delete", item_type="news", item_id=news_id, user_id=str(current_user["_id"]))
     
