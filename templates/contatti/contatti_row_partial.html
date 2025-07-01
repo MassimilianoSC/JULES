@@ -1,4 +1,12 @@
-<div id="contact-{{ contact._id }}" class="p-4 bg-blue-50 border-l-4 border-blue-400 rounded-2xl shadow-sm">
+{% from "components/card.html" import render_card, pin_btn %}
+
+<div id="contact-{{ contact._id }}" 
+     class="card-animated relative bg-blue-50 border-l-4 border-blue-400 rounded-2xl p-4 shadow-sm"
+     data-item-type="contact"
+     data-item-id="{{ contact._id }}">
+  
+  {{ pin_btn({'type': 'contact', 'id': contact._id}, {'type': 'contact', 'id': contact._id} in pinned) }}
+
   <div class="flex flex-row justify-between">
     <div class="flex-1">
       <h2 class="text-xl font-bold text-gray-900 mb-2">{{ contact.name }}</h2>
@@ -44,7 +52,7 @@
       </div>
     </div>
   </div>
-  {% if user.role == "admin" %}
+  {% if current_user.role == "admin" %}
   <div class="flex gap-2 mt-2 md:mt-0">
     <button
       hx-get="/contatti/{{ contact._id }}/edit"
@@ -53,17 +61,86 @@
       class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
       Modifica
     </button>
-    <form
-      hx-delete="/contatti/{{ contact._id }}"
-      hx-target="#contact-{{ contact._id }}"
-      hx-swap="delete"
-      style="display:inline">
-      <button type="button"
-              onclick="showDelete(this)"
-              class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
-        Elimina
-      </button>
-    </form>
+    <button
+      type="button"
+      data-delete-url="/contatti/{{ contact._id }}"
+      data-contact-id="{{ contact._id }}"
+      class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      Elimina
+    </button>
   </div>
   {% endif %}
 </div>
+
+<script type="module">
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('click', e => {
+    const deleteBtn = e.target.closest('[data-delete-url]');
+    
+    if (deleteBtn) {
+      e.preventDefault();
+      const url = deleteBtn.dataset.deleteUrl;
+      const contactId = deleteBtn.dataset.contactId;
+      const contactElement = document.querySelector(`#contact-${contactId}`);
+      
+      Swal.fire({
+        title: 'Sei sicuro?',
+        text: 'Questa azione non può essere annullata',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // Facciamo la chiamata DELETE manualmente
+          fetch(url, {
+            method: 'DELETE',
+            headers: {
+              'HX-Request': 'true'
+            }
+          }).then(async response => {
+            if (response.ok) {
+              // Otteniamo l'HX-Trigger header
+              const triggerHeader = response.headers.get('HX-Trigger');
+              console.log('[DEBUG] HX-Trigger header ricevuto:', triggerHeader);
+              
+              // Rimuoviamo l'elemento dalla UI e emettiamo l'evento
+              if (contactElement) {
+                contactElement.remove();
+                eventBus.emit('resource/delete', {
+                  type: 'contact',
+                  id: contactId
+                });
+              }
+
+              if (triggerHeader) {
+                try {
+                  const triggerData = JSON.parse(triggerHeader);
+                  console.log('[DEBUG] Trigger data parsato:', triggerData);
+                  if (triggerData.showAdminConfirmation) {
+                    const conf = triggerData.showAdminConfirmation;
+                    console.log('[DEBUG] Configurazione conferma admin:', conf);
+                    // Mostriamo il messaggio di conferma all'admin
+                    Swal.fire({
+                      title: conf.title,
+                      text: conf.message,
+                      icon: conf.level,
+                      timer: conf.duration,
+                      showConfirmButton: false
+                    });
+                  }
+                } catch (error) {
+                  console.error('[DEBUG] Errore parsing trigger data:', error);
+                }
+              }
+            }
+          }).catch(error => {
+            console.error('[DEBUG] Errore durante la chiamata DELETE:', error);
+          });
+        }
+      });
+    }
+  });
+</script>

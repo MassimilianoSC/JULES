@@ -2,13 +2,95 @@
 {% import "components/crud_base.html" as crud %}
 {% import "links/links_row_partial.html" as row %}
 
+{% block title %}Link Utili{% endblock %}
+
 {% block content %}
-  {{ crud.crud_page(
-       "Link utili",
-       "/links/new",
-       "links-list",
-       row.link_row,          
-       links,
-       current_user
-  ) }}
+<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2">
+  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+    <h1 class="text-3xl md:text-4xl font-bold text-blue-900 mb-8 text-center tracking-wide">Link utili</h1>
+
+    {% if current_user.role == 'admin' %}
+      <a href="/links/new" 
+         class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition mb-6">
+         + Nuovo
+      </a>
+    {% endif %}
+
+    {% if links %}
+    <div id="links-list" class="grid gap-4">
+      {% include "links/links_list_partial.html" %}
+    </div>
+    {% else %}
+    <p class="text-center text-slate-600">Nessun link disponibile.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script type="module">
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+
+  /* Gestione eliminazione con conferma e notifica */
+  document.getElementById('links-list-container')?.addEventListener('click', async e => {
+    const btn = e.target.closest('[data-delete]');
+    if (!btn) return;
+
+    // Mostra conferma SweetAlert2
+    const result = await Swal.fire({
+      title: 'Sei sicuro?',
+      text: 'Questa azione non può essere annullata',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sì, elimina',
+      cancelButtonText: 'Annulla',
+      reverseButtons: true
+    });
+
+    if (!result.isConfirmed) return;
+
+    const linkId = btn.dataset.delete.split('/')[2];
+    const form = btn.closest('form');
+    
+    // Submit del form HTMX
+    form.requestSubmit();
+    
+    // Emetti evento per notificare gli altri utenti
+    eventBus.emit('resource/delete', {
+      type: 'link',
+      id: linkId
+    });
+  });
+
+  // Ascolta eventi HTMX per mostrare toast di conferma
+  document.body.addEventListener('htmx:afterRequest', (evt) => {
+    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/links/')) {
+      const triggerHeader = evt.detail.xhr.getResponseHeader('HX-Trigger');
+      if (triggerHeader) {
+        try {
+          const triggers = JSON.parse(triggerHeader);
+          if (triggers.showAdminConfirmation) {
+            const conf = triggers.showAdminConfirmation;
+            Swal.fire({
+              title: conf.title,
+              text: conf.message,
+              icon: conf.level,
+              timer: conf.duration,
+              showConfirmButton: false
+            });
+          }
+        } catch (e) {
+          console.error('Errore parsing trigger:', e);
+          showToast({
+            title: 'Operazione completata',
+            body: 'Il link è stato aggiornato con successo',
+            type: 'success'
+          });
+        }
+      }
+    }
+  });
+</script>
 {% endblock %} 

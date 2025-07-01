@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Montserrat:wght@700&display=swap');
+
+body.ai-news-page {
+  font-family: 'Inter', Arial, sans-serif;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+}
+
+.ai-news-title {
+  font-family: 'Montserrat', Arial, sans-serif;
+  font-size: 2.2rem;
+  color: #2d1e6b;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.5em;
+}
+
+.ai-news-card {
+  background: #fff;
+  border-radius: 1.2em;
+  box-shadow: 0 4px 24px 0 rgba(44, 62, 80, 0.13), 0 1.5px 6px 0 rgba(44, 62, 80, 0.07);
+  padding: 2em 2em 1.5em 2em;
+  margin-bottom: 2em;
+  transition: box-shadow 0.2s, transform 0.2s;
+  border-left: 6px solid #5f2eea;
+}
+.ai-news-card:hover {
+  box-shadow: 0 8px 32px 0 rgba(44, 62, 80, 0.18), 0 3px 12px 0 rgba(44, 62, 80, 0.10);
+  transform: translateY(-4px) scale(1.01);
+  border-left: 6px solid #00e6a2;
+}
+
+.ai-news-badge {
+  display: inline-block;
+  background: linear-gradient(90deg, #5f2eea 0%, #00e6a2 100%);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 1em;
+  padding: 0.3em 1em;
+  font-size: 0.95em;
+  margin-right: 0.5em;
+  letter-spacing: 0.04em;
+  box-shadow: 0 1px 4px 0 rgba(95,46,234,0.10);
+}
+
+.ai-news-btn {
+  background: linear-gradient(90deg, #ff6a00 0%, #ee0979 100%);
+  color: #fff;
+  border: none;
+  border-radius: 0.8em;
+  padding: 0.7em 1.5em;
+  font-family: 'Montserrat', Arial, sans-serif;
+  font-weight: 700;
+  font-size: 1em;
+  cursor: pointer;
+  box-shadow: 0 2px 8px 0 rgba(238,9,121,0.10);
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.ai-news-btn:hover {
+  background: linear-gradient(90deg, #ee0979 0%, #ff6a00 100%);
+  box-shadow: 0 4px 16px 0 rgba(238,9,121,0.18);
+}
+
+.ai-news-meta {
+  color: #5f2eea;
+  font-size: 1em;
+  font-weight: 600;
+  margin-bottom: 0.5em;
+}
+
+.ai-news-description {
+  font-size: 1.15em;
+  color: #222;
+  margin-bottom: 1.2em;
+  line-height: 1.7;
+}
+
+@media (max-width: 700px) {
+  .ai-news-card {
+    padding: 1.2em 0.7em 1em 0.7em;
+  }
+  .ai-news-title {
+    font-size: 1.3rem;
+  }
+} 

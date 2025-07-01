@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1 class="text-xl font-bold my-4">AI-news caricata!</h1>
+  <a href="/ai-news" class="btn btn-primary">torna alla lista</a>
+{% endblock %}
+
+{% if toast %}
+  <!-- toast immediato -->
+  <script type="module">
+    import { showToast } from "/static/js/features/notifications/toast.js";
+    showToast({ title: "{{ toast.title }}",
+                body:  "{{ toast.body  }}",
+                type:  "{{ toast.type  }}" });
+  </script>
+{% endif %} 

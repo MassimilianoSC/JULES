@@ -1,7 +1,7 @@
 <!-- Form per nuovo contatto -->
 <form hx-post="/contatti/new" 
       hx-target="#contatti-list" 
-      hx-swap="afterbegin"
+      hx-swap="none"
       class="space-y-4">
     
     <div>
@@ -87,9 +87,9 @@
     </fieldset>
 
     <div class="flex justify-end space-x-3">
-        <button type="button"
-                onclick="closeModal()"
-                class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+        <button type="button" 
+                data-close-modal
+                class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
             Annulla
         </button>
         <button type="submit"

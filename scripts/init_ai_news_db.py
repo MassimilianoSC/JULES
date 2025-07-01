@@ -1,6 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 from datetime import datetime, timedelta
+from app.utils.ai_news_migration import run_migrations
 
 async def init_ai_news_collections(db):
     # Creazione indici per ai_news
@@ -33,7 +34,13 @@ async def init_ai_news_collections(db):
     await db.ai_news_comments.create_index("created_at")
     print("✅ Indici ai_news_comments creati")
 
-if __name__ == "__main__":
+async def main():
+    # Connessione al database
     client = AsyncIOMotorClient("mongodb://localhost:27017")
     db = client.intranet
-    asyncio.run(init_ai_news_collections(db)) 
+
+    # Esegui le migrazioni
+    await run_migrations(db)
+
+if __name__ == "__main__":
+    asyncio.run(main()) 

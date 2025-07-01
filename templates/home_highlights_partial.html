@@ -2,47 +2,12 @@
   {% set pinned = user.pinned_items or [] %}
   {% set pinned_ids = pinned | map(attribute='id') | list %}
   {% set pinned_ids = pinned_ids | map('string') | list %}
-  {% if pinned %}
-    <div class="mb-8">
-      <div class="inline-block mb-3 px-6 py-2 rounded-xl bg-pink-100/80 border-2 border-pink-400">
-        <h2 class="text-xl font-bold text-pink-900 text-center flex items-center gap-2">
-          <span>Card pinnate</span>
-          <span class="bg-pink-400 text-white text-xs font-bold px-3 py-1 rounded-full">PIN</span>
-        </h2>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {% for pin in pinned %}
-          {% set h = (highlights | selectattr('id', 'equalto', pin.id) | list | first) %}
-          {% if h %}
-            <div class="relative bg-pink-50 border-l-4 border-pink-400 rounded-2xl p-4 shadow-sm flex flex-col gap-2 animate-fadein card-animated">
-              <button class="absolute top-2 right-2 pin-btn pinned text-pink-400 text-xl" onclick="togglePin('{{ h.type }}', '{{ h.id }}', this)" title="Rimuovi pin">★</button>
-              <h3 class="text-lg font-bold text-pink-900 mb-1">{{ h.title }}</h3>
-              <span class="text-xs text-pink-400 mb-2">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
-              {% if h.type == 'document' %}
-                <a href="/doc/{{ h.id }}/preview" class="mt-2 text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors duration-150">Visualizza documento</a>
-              {% elif h.type == 'ai_news' %}
-                {% if h.external_url %}
-                  <a href="{{ h.external_url }}" target="_blank" rel="noopener" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Guarda video AI</a>
-                {% elif h.filename %}
-                  <a href="/ai-news/{{ h.id }}/preview" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Visualizza documento AI</a>
-                {% else %}
-                  <span class="text-xs text-violet-400 italic">Nessuna risorsa disponibile</span>
-                {% endif %}
-              {% elif h.type == 'link' %}
-                <a href="{{ h.url }}" target="_blank" class="text-green-700 hover:text-green-900 font-medium text-sm transition-colors duration-150">Apri link</a>
-              {% elif h.type == 'contact' %}
-                {% if h.email %}<div class="text-yellow-800 text-sm">Email: <a href="mailto:{{ h.email }}" class="text-yellow-700 hover:text-yellow-900 font-medium">{{ h.email }}</a></div>{% endif %}
-                {% if h.phone %}<div class="text-yellow-800 text-sm">Telefono: <span>{{ h.phone }}</span></div>{% endif %}
-                <div class="text-yellow-800 text-sm">BU: {{ h.bu or '-' }}</div>
-                <div class="text-yellow-800 text-sm">Team: {{ h.team or '-' }}</div>
-                <div class="text-yellow-800 text-sm">Filiale: {{ h.work_branch or '-' }}</div>
-              {% endif %}
-            </div>
-          {% endif %}
-        {% endfor %}
-      </div>
-    </div>
-  {% endif %}
+
+  <!-- Sezione Card Pinnate -->
+  <div class="mb-6">
+    <h2 id="pinned-title" class="text-xl font-bold mb-2">Card pinnate</h2>
+    <div id="highlights-container" class="flex flex-col gap-4 mb-6"></div>
+  </div>
 
   {% set docs = highlights | selectattr('type', 'equalto', 'document') | list %}
   {% set ai_docs = highlights | selectattr('type', 'equalto', 'ai_news') | list %}
@@ -62,13 +27,21 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         {% for h in docs %}
           {% if h.id|string not in pinned_ids %}
-          <div class="relative bg-blue-50 border-l-4 border-blue-400 rounded-2xl p-4 shadow-sm flex flex-col gap-2">
-            <button class="absolute top-2 right-2 pin-btn {% if {'type': h.type, 'id': h.id} in pinned %}pinned text-blue-400{% else %}text-slate-400{% endif %} text-xl" onclick="togglePin('{{ h.type }}', '{{ h.id }}', this)" title="Pin">{% if {'type': h.type, 'id': h.id} in pinned %}★{% else %}☆{% endif %}</button>
-            <div class="flex items-center justify-between mb-1">
-              <h3 class="text-base font-semibold text-blue-900">{{ h.title }}</h3>
-              <span class="text-xs text-blue-500">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
+          <div class="card bg-blue-50 border-l-4 border-blue-400 rounded-2xl shadow-sm p-4 mb-4" data-item-type="{{ h.type }}" data-item-id="{{ h.id }}">
+            <div class="flex justify-between items-start">
+              <button
+                type="button"
+                class="pin-btn text-2xl text-slate-400 hover:text-yellow-400 transition-colors"
+                data-pin-color="text-yellow-400"
+                data-item-type="{{ h.type }}"
+                data-item-id="{{ h.id }}">
+                ☆
+              </button>
+              <div class="flex-1 ml-4">
+                <h3 class="text-lg font-bold text-gray-900">{{ h.title }}</h3>
+                <p class="text-gray-600">{{ h.description }}</p>
+              </div>
             </div>
-            <a href="/doc/{{ h.id }}/preview" class="text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors duration-150">Visualizza documento</a>
           </div>
           {% endif %}
         {% endfor %}
@@ -86,13 +59,21 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         {% for h in ai_docs %}
           {% if h.id|string not in pinned_ids %}
-          <div class="relative bg-violet-50 border-l-4 border-violet-400 rounded-2xl p-4 shadow-sm flex flex-col gap-2 animate-fadein card-animated">
-            <button class="absolute top-2 right-2 pin-btn {% if {'type': h.type, 'id': h.id} in pinned %}pinned text-violet-400{% else %}text-slate-400{% endif %} text-xl" onclick="togglePin('{{ h.type }}', '{{ h.id }}', this)" title="Pin">{% if {'type': h.type, 'id': h.id} in pinned %}★{% else %}☆{% endif %}</button>
-            <div class="flex items-center justify-between mb-1">
-              <h3 class="text-base font-semibold text-violet-900">{{ h.title }}</h3>
-              <span class="text-xs text-violet-500">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
+          <div class="card bg-purple-50 border-l-4 border-purple-400 rounded-2xl shadow-sm p-4 mb-4" data-item-type="{{ h.type }}" data-item-id="{{ h.id }}">
+            <div class="flex justify-between items-start">
+              <button
+                type="button"
+                class="pin-btn text-2xl text-slate-400 hover:text-yellow-400 transition-colors"
+                data-pin-color="text-yellow-400"
+                data-item-type="{{ h.type }}"
+                data-item-id="{{ h.id }}">
+                ☆
+              </button>
+              <div class="flex-1 ml-4">
+                <h3 class="text-lg font-bold text-gray-900">{{ h.title }}</h3>
+                <p class="text-gray-600">{{ h.description }}</p>
+              </div>
             </div>
-            <a href="/ai-news/{{ h.id }}/preview" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Visualizza documento AI</a>
           </div>
           {% endif %}
         {% endfor %}
@@ -110,13 +91,21 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         {% for h in links %}
           {% if h.id|string not in pinned_ids %}
-          <div class="relative bg-green-50 border-l-4 border-green-400 rounded-2xl p-4 shadow-sm flex flex-col gap-2">
-            <button class="absolute top-2 right-2 pin-btn {% if {'type': h.type, 'id': h.id} in pinned %}pinned text-green-400{% else %}text-slate-400{% endif %} text-xl" onclick="togglePin('{{ h.type }}', '{{ h.id }}', this)" title="Pin">{% if {'type': h.type, 'id': h.id} in pinned %}★{% else %}☆{% endif %}</button>
-            <div class="flex items-center justify-between mb-1">
-              <h3 class="text-base font-semibold text-green-900">{{ h.title }}</h3>
-              <span class="text-xs text-green-500">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
+          <div class="card bg-blue-50 border-l-4 border-blue-400 rounded-2xl shadow-sm p-4 mb-4" data-item-type="{{ h.type }}" data-item-id="{{ h.id }}">
+            <div class="flex justify-between items-start">
+              <button
+                type="button"
+                class="pin-btn text-2xl text-slate-400 hover:text-yellow-400 transition-colors"
+                data-pin-color="text-yellow-400"
+                data-item-type="{{ h.type }}"
+                data-item-id="{{ h.id }}">
+                ☆
+              </button>
+              <div class="flex-1 ml-4">
+                <h3 class="text-lg font-bold text-gray-900">{{ h.title }}</h3>
+                <a href="{{ h.url }}" target="_blank" class="text-blue-600 hover:underline">{{ h.url }}</a>
+              </div>
             </div>
-            <a href="{{ h.url }}" target="_blank" class="text-green-700 hover:text-green-900 font-medium text-sm transition-colors duration-150">Apri link</a>
           </div>
           {% endif %}
         {% endfor %}
@@ -134,17 +123,22 @@
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         {% for h in contacts %}
           {% if h.id|string not in pinned_ids %}
-          <div class="relative bg-yellow-50 border-l-4 border-yellow-400 rounded-2xl p-4 shadow-sm flex flex-col gap-2">
-            <button class="absolute top-2 right-2 pin-btn {% if {'type': h.type, 'id': h.id} in pinned %}pinned text-yellow-400{% else %}text-slate-400{% endif %} text-xl" onclick="togglePin('{{ h.type }}', '{{ h.id }}', this)" title="Pin">{% if {'type': h.type, 'id': h.id} in pinned %}★{% else %}☆{% endif %}</button>
-            <div class="flex items-center justify-between mb-1">
-              <h3 class="text-base font-semibold text-yellow-900">{{ h.title }}</h3>
-              <span class="text-xs text-yellow-500">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
+          <div class="card bg-orange-50 border-l-4 border-orange-400 rounded-2xl shadow-sm p-4 mb-4" data-item-type="{{ h.type }}" data-item-id="{{ h.id }}">
+            <div class="flex justify-between items-start">
+              <button
+                type="button"
+                class="pin-btn text-2xl text-slate-400 hover:text-yellow-400 transition-colors"
+                data-pin-color="text-yellow-400"
+                data-item-type="{{ h.type }}"
+                data-item-id="{{ h.id }}">
+                ☆
+              </button>
+              <div class="flex-1 ml-4">
+                <h3 class="text-lg font-bold text-gray-900">{{ h.name }}</h3>
+                <p class="text-gray-600">{{ h.email }}</p>
+                <p class="text-gray-600">{{ h.phone }}</p>
+              </div>
             </div>
-            {% if h.email %}<div class="text-yellow-800 text-sm">Email: <a href="mailto:{{ h.email }}" class="text-yellow-700 hover:text-yellow-900 font-medium">{{ h.email }}</a></div>{% endif %}
-            {% if h.phone %}<div class="text-yellow-800 text-sm">Telefono: <span>{{ h.phone }}</span></div>{% endif %}
-            <div class="text-yellow-800 text-sm">BU: {{ h.bu or '-' }}</div>
-            <div class="text-yellow-800 text-sm">Team: {{ h.team or '-' }}</div>
-            <div class="text-yellow-800 text-sm">Filiale: {{ h.work_branch or '-' }}</div>
           </div>
           {% endif %}
         {% endfor %}

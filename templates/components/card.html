@@ -1,7 +1,135 @@
+{% macro pin_btn(h, pinned, card_id) -%}
+{%- set color = h.type ~ '-400' %}
+{%- set is_pinned = pinned if pinned is boolean else {'type': h.type, 'id': card_id} in pinned %}
+<button
+  class="pin-btn {{ 'pinned' if is_pinned else '' }} text-{{ color }} text-xl absolute -top-1 right-2"
+  data-pin-color="text-{{ color }}"
+  data-item-type="{{ h.type }}"
+  data-item-id="{{ card_id }}">
+  {{ '★' if is_pinned else '☆' }}
+</button>
+{%- endmacro %}
+
 {% macro page_card() %}
 <div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2">
   <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
     {{ caller() }}
   </div>
+</div>
+{% endmacro %}
+
+{% macro render_card(h, pinned) %}
+  {% set card_type = 'pink' if h.type == 'news' else 'blue' if h.type == 'document' else 'violet' if h.type == 'ai_news' else 'green' if h.type == 'link' else 'yellow' %}
+  {% set card_id = h.object_id or h._id or h.id or '' %}
+  <div class="card-animated relative {% if pinned is boolean and pinned %}bg-pink-50 border-pink-400{% else %}bg-{{ card_type }}-50 border-{{ card_type }}-400{% endif %} border-l-4 rounded-2xl p-4 shadow-sm flex flex-col gap-2"
+       data-item-type="{{ h.type }}"
+       data-item-id="{{ card_id }}"
+       data-origin="#{{ h.type }}-section"
+       data-original-color="bg-{{ card_type }}-50"
+       data-original-border="border-{{ card_type }}-400">
+    {{ pin_btn(h, pinned, card_id) }}
+    <div class="flex items-center justify-between mb-1">
+      <h3 class="text-lg font-bold text-{{ card_type }}-900">{{ h.title }}</h3>
+      <span class="text-xs text-{{ card_type }}-400">{{ h.created_at.strftime('%d/%m/%Y') }}</span>
+    </div>
+    {% if h.type == 'document' %}
+      <a href="/doc/{{ card_id }}/preview" class="mt-2 text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors duration-150">Visualizza documento</a>
+    {% elif h.type == 'ai_news' %}
+      {% if h.external_url %}
+        <a href="{{ h.external_url }}" target="_blank" rel="noopener" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Guarda video AI</a>
+      {% elif h.filename %}
+        <a href="/ai-news/{{ card_id }}/preview" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Visualizza documento AI</a>
+      {% else %}
+        <span class="text-xs text-violet-400 italic">Nessuna risorsa disponibile</span>
+      {% endif %}
+    {% elif h.type == 'link' %}
+      <a href="{{ h.url }}" target="_blank" class="text-green-700 hover:text-green-900 font-medium text-sm transition-colors duration-150">Apri link</a>
+    
+      {% if h.email %}<div class="text-{{ card_type }}-800 text-sm">Email: <a href="mailto:{{ h.email }}" class="text-{{ card_type }}-700 hover:text-{{ card_type }}-900 font-medium">{{ h.email }}</a></div>{% endif %}
+      {% if h.phone %}<div class="text-{{ card_type }}-800 text-sm">Telefono: <span>{{ h.phone }}</span></div>{% endif %}
+      <div class="text-{{ card_type }}-800 text-sm">BU: {{ h.bu or '-' }}</div>
+      <div class="text-{{ card_type }}-800 text-sm">Team: {{ h.team or '-' }}</div>
+      <div class="text-{{ card_type }}-800 text-sm">Filiale: {{ h.work_branch or '-' }}</div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro render_link_card(h, pinned) %}
+{%- set card_id = h.object_id or h._id or h.id or '' -%}
+<div class="card-animated" data-item-type="link" data-item-id="{{ card_id }}">
+  <div class="card-header">
+    {{ pin_btn(h, {'type': h.type, 'id': card_id} in pinned, card_id) }}
+    <h3>{{ h.title }}</h3>
+  </div>
+  <a href="{{ h.url }}" target="_blank" class="text-green-700 hover:text-green-900 font-medium text-sm transition-colors duration-150">Apri link</a>
+</div>
+{% endmacro %}
+
+{% macro render_document_card(h, pinned) %}
+{%- set card_id = h.object_id or h._id or h.id or '' -%}
+<div class="card-animated" data-item-type="document" data-item-id="{{ card_id }}">
+  <div class="card-header">
+    {{ pin_btn(h, {'type': h.type, 'id': card_id} in pinned, card_id) }}
+    <h3>{{ h.title }}</h3>
+  </div>
+  <a href="/doc/{{ h.id|string }}/preview" class="mt-2 text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors duration-150">Visualizza documento</a>
+</div>
+{% endmacro %}
+
+{% macro render_ai_news_card(h, pinned) %}
+{%- set card_id = h.object_id or h._id or h.id or '' -%}
+<div class="card-animated" data-item-type="ai_news" data-item-id="{{ card_id }}">
+  <div class="card-header">
+    {{ pin_btn(h, {'type': h.type, 'id': card_id} in pinned, card_id) }}
+    <h3>{{ h.title }}</h3>
+  </div>
+  {% if h.external_url %}
+    <a href="{{ h.external_url }}" target="_blank" rel="noopener" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Guarda video AI</a>
+  {% elif h.filename %}
+    <a href="/ai-news/{{ h.id|string }}/preview" class="text-violet-600 hover:text-violet-800 font-medium text-sm transition-colors duration-150">Visualizza documento AI</a>
+  {% else %}
+    <span class="text-xs text-violet-400 italic">Nessuna risorsa disponibile</span>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro render_contact_card(h, pinned) %}
+{%- set card_id = h.object_id or h._id or h.id or '' -%}
+<div class="card-animated" data-item-type="contact" data-item-id="{{ card_id }}">
+  <div class="card-header">
+    {{ pin_btn(h, {'type': h.type, 'id': card_id} in pinned, card_id) }}
+    <h3>{{ h.name }}</h3>
+  </div>
+  {% if h.email %}<div class="text-yellow-800 text-sm">Email: <a href="mailto:{{ h.email }}" class="text-yellow-700 hover:text-yellow-900 font-medium">{{ h.email }}</a></div>{% endif %}
+  {% if h.phone %}<div class="text-yellow-800 text-sm">Telefono: <span>{{ h.phone }}</span></div>{% endif %}
+  <div class="text-yellow-800 text-sm">BU: {{ h.bu or '-' }}</div>
+  <div class="text-yellow-800 text-sm">Team: {{ h.team or '-' }}</div>
+  <div class="text-yellow-800 text-sm">Filiale: {{ h.work_branch or '-' }}</div>
+</div>
+{% endmacro %}
+
+{% macro render_news_card(h, pinned) %}
+{%- set card_id = h.object_id or h._id or h.id or '' -%}
+<div class="card-animated" data-item-type="news" data-item-id="{{ card_id }}">
+  <div class="card-header">
+    {{ pin_btn(h, {'type': h.type, 'id': card_id} in pinned, card_id) }}
+    <h3>{{ h.title }}</h3>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro card(h, card_id) %}
+<div class="card bg-white rounded-lg shadow-sm p-6 mb-4" data-item-type="{{ h.type }}" data-item-id="{{ card_id }}">
+  <div class="flex justify-between items-start">
+    <button
+      type="button"
+      class="pin-btn text-2xl text-slate-400 hover:text-yellow-400 transition-colors"
+      data-pin-color="text-yellow-400"
+      data-item-type="{{ h.type }}"
+      data-item-id="{{ card_id }}">
+      ☆
+    </button>
+  </div>
+  <!-- ... resto del codice ... -->
 </div>
 {% endmacro %} 

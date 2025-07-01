@@ -57,17 +57,86 @@
       class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
       Modifica
     </button>
-    <form
-      hx-delete="/links/{{ l._id }}"
-      hx-target="#link-{{ l._id }}"
-      hx-swap="delete"
-      style="display:inline">
-      <button type="button"
-              onclick="showDelete(this)"
-              class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
-        Elimina
-      </button>
-    </form>
+    <button
+      type="button"
+      data-delete-url="/links/{{ l._id }}"
+      data-link-id="{{ l._id }}"
+      class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      Elimina
+    </button>
   </div>
   {% endif %}
-</div> 
+</div>
+
+<script type="module">
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('click', e => {
+    const deleteBtn = e.target.closest('[data-delete-url]');
+    
+    if (deleteBtn) {
+      e.preventDefault();
+      const url = deleteBtn.dataset.deleteUrl;
+      const linkId = deleteBtn.dataset.linkId;
+      const linkElement = document.querySelector(`#link-${linkId}`);
+      
+      Swal.fire({
+        title: 'Sei sicuro?',
+        text: 'Questa azione non può essere annullata',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // Facciamo la chiamata DELETE manualmente
+          fetch(url, {
+            method: 'DELETE',
+            headers: {
+              'HX-Request': 'true'
+            }
+          }).then(async response => {
+            if (response.ok) {
+              // Otteniamo l'HX-Trigger header
+              const triggerHeader = response.headers.get('HX-Trigger');
+              console.log('[DEBUG] HX-Trigger header ricevuto:', triggerHeader);
+              
+              // Rimuoviamo l'elemento dalla UI e emettiamo l'evento
+              if (linkElement) {
+                linkElement.remove();
+                eventBus.emit('resource/delete', {
+                  type: 'link',
+                  id: linkId
+                });
+              }
+
+              if (triggerHeader) {
+                try {
+                  const triggerData = JSON.parse(triggerHeader);
+                  console.log('[DEBUG] Trigger data parsato:', triggerData);
+                  if (triggerData.showAdminConfirmation) {
+                    const conf = triggerData.showAdminConfirmation;
+                    console.log('[DEBUG] Configurazione conferma admin:', conf);
+                    // Mostriamo il messaggio di conferma all'admin
+                    Swal.fire({
+                      title: conf.title,
+                      text: conf.message,
+                      icon: conf.level,
+                      timer: conf.duration,
+                      showConfirmButton: false
+                    });
+                  }
+                } catch (error) {
+                  console.error('[DEBUG] Errore parsing trigger data:', error);
+                }
+              }
+            }
+          }).catch(error => {
+            console.error('[DEBUG] Errore durante la chiamata DELETE:', error);
+          });
+        }
+      });
+    }
+  });
+</script> 

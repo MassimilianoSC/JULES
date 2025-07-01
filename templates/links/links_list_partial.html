@@ -1,6 +1,10 @@
-{% for l in links %}
-  {% include "links/row_partial.html" %}
-{% endfor %}
+<ul id="links-list" class="flex flex-col gap-6 py-2 pb-28">
+  {% for l in links %}
+    {% with l=l, user=current_user %}
+      {% include "links/row_partial.html" %}
+    {% endwith %}
+  {% endfor %}
+</ul>
 {% if not links %}
   <div class="text-gray-500 text-sm px-4 py-2">Nessun link disponibile per la tua filiale.</div>
 {% endif %} 

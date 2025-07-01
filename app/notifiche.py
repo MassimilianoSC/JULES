@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from bson import ObjectId
 from datetime import datetime
 
@@ -160,29 +160,27 @@ async def segna_letta(id: str, request: Request, user=Depends(get_current_user))
 
 # 🔹 Endpoint per il pallino rosso nel menu
 @notifiche_router.get("/notifiche/count/{tipo}", response_class=HTMLResponse)
-async def notifiche_count(
-        tipo: str,
-        request: Request,
-        user = Depends(get_current_user)
-):
+async def notifiche_count(tipo: str, request: Request, user=Depends(get_current_user)):
+    if not user:
+        return Response(status_code=204)
+    
     db = request.app.state.db
     employment_type = user.get("employment_type")
     branch = user.get("branch")
+    
     q = {
         "tipo": tipo,
         "branch": {"$in": ["*", branch]},
-        "letta_da": {"$ne": str(user["_id"])} ,
+        "letta_da": {"$ne": str(user["_id"])},
         "$or": get_emp_type_conditions(employment_type)
     }
     count = await db.notifiche.count_documents(q)
-    if tipo == "link":
-        return request.app.state.templates.TemplateResponse(
-            "components/nav_links_badge.html",
-            {"request": request, "unread_link_count": count, "u": user}
-        )
-    html = (f'<span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">{count}</span>'
-            if count > 0 else '')
-    return HTMLResponse(html)
+    
+    # Se il conteggio è 0, restituisci stringa vuota
+    if count == 0:
+        return Response(content="", media_type="text/html")
+        
+    return Response(content=str(count), media_type="text/html")
 
 
 # Endpoint per segnare tutte le notifiche di un certo tipo come lette
@@ -239,7 +237,7 @@ async def notifiche_count_link(request: Request, user=Depends(get_current_user))
     count = await db.notifiche.count_documents(q)
     return request.app.state.templates.TemplateResponse(
         "components/nav_links_badge.html",
-        {"request": request, "unread_link_count": count, "u": user}
+        {"request": request, "unread_link_count": "" if count == 0 else count, "u": user}
     )
 
 
@@ -258,7 +256,7 @@ async def notifiche_count_contatto(request: Request, user=Depends(get_current_us
     count = await db.notifiche.count_documents(q)
     return request.app.state.templates.TemplateResponse(
         "components/nav_contatti_badge.html",
-        {"request": request, "unread_contatti_count": count, "u": user}
+        {"request": request, "unread_contatti_count": "" if count == 0 else count, "u": user}
     )
 
 
@@ -282,7 +280,7 @@ async def notifiche_count_documento(request: Request, user=Depends(get_current_u
     count = await db.notifiche.count_documents(q)
     return request.app.state.templates.TemplateResponse(
         "components/nav_documenti_badge.html",
-        {"request": request, "new_docs_count": count, "u": user}
+        {"request": request, "new_docs_count": "" if count == 0 else count, "u": user}
     )
 
 
@@ -301,5 +299,5 @@ async def notifiche_count_news(request: Request, user=Depends(get_current_user))
     count = await db.notifiche.count_documents(q)
     return request.app.state.templates.TemplateResponse(
         "components/nav_news_badge.html",
-        {"request": request, "unread_news_count": count, "u": user}
+        {"request": request, "unread_news_count": "" if count == 0 else count, "u": user}
     )

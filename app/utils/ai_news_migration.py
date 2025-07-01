@@ -109,3 +109,66 @@ async def migrate_existing_news(db):
         }
         # Aggiorna il documento
         await db.ai_news.replace_one({"_id": doc["_id"]}, new_doc)
+
+async def clean_duplicate_views(db):
+    """Rimuove le visualizzazioni duplicate mantenendo solo la più recente per ogni coppia user_id/news_id"""
+    pipeline = [
+        {
+            "$group": {
+                "_id": {
+                    "user_id": "$user_id",
+                    "news_id": "$news_id"
+                },
+                "last_doc": {"$last": "$$ROOT"},
+                "count": {"$sum": 1}
+            }
+        },
+        {
+            "$match": {
+                "count": {"$gt": 1}
+            }
+        }
+    ]
+    
+    # Trova i duplicati
+    duplicates = await db.ai_news_views.aggregate(pipeline).to_list(length=None)
+    
+    if duplicates:
+        print(f"Trovati {len(duplicates)} gruppi di visualizzazioni duplicate")
+        for dup in duplicates:
+            # Mantieni solo il documento più recente
+            last_doc = dup["last_doc"]
+            await db.ai_news_views.delete_many({
+                "user_id": last_doc["user_id"],
+                "news_id": last_doc["news_id"],
+                "_id": {"$ne": last_doc["_id"]}
+            })
+        print("Pulizia completata")
+    else:
+        print("Nessun duplicato trovato")
+
+async def create_ai_news_views_indexes(db):
+    """Crea gli indici necessari per la collection ai_news_views"""
+    # Prima pulisci i duplicati
+    await clean_duplicate_views(db)
+    
+    print("Creazione indice unique su user_id + news_id...")
+    # Indice composto unique per user_id + news_id
+    await db.ai_news_views.create_index(
+        [("user_id", 1), ("news_id", 1)],
+        unique=True, 
+        background=True
+    )
+
+    print("Creazione indice TTL su last_view...")
+    # Indice TTL su last_view per pulizia automatica dopo 90 giorni
+    await db.ai_news_views.create_index(
+        "last_view", 
+        expireAfterSeconds=60*60*24*90  # 90 giorni
+    )
+
+async def run_migrations(db):
+    """Esegue tutte le migrazioni necessarie"""
+    print("Inizializzazione migrazione ai_news_views...")
+    await create_ai_news_views_indexes(db)
+    print("Migrazioni completate con successo!")

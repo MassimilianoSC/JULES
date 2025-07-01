@@ -1,0 +1,146 @@
+{% from "components/card.html" import render_card, pin_btn %}
+
+<div id="contact-{{ contact._id }}" 
+     class="card-animated relative bg-blue-50 border-l-4 border-blue-400 rounded-2xl p-4 shadow-sm"
+     data-item-type="contact"
+     data-item-id="{{ contact._id }}">
+  
+  {{ pin_btn({'type': 'contact', 'id': contact._id}, {'type': 'contact', 'id': contact._id} in pinned) }}
+
+  <div class="flex flex-row justify-between">
+    <div class="flex-1">
+      <h2 class="text-xl font-bold text-gray-900 mb-2">{{ contact.name }}</h2>
+      <div class="prose max-w-none text-gray-800 mb-1">
+        <a href="mailto:{{ contact.email }}" class="text-[#0B5FFF] hover:underline">{{ contact.email }}</a>
+        {% if contact.phone %}
+        • <a href="tel:{{ contact.phone }}" class="text-[#0B5FFF] hover:underline">{{ contact.phone }}</a>
+        {% endif %}
+      </div>
+      <div class="text-sm text-gray-700 mb-1">BU: {{ contact.bu or '-' }}</div>
+      <div class="text-sm text-gray-700 mb-1">Team: {{ contact.team or '-' }}</div>
+      <div class="text-sm text-gray-700 mb-1">Filiale: {{ contact.work_branch or '-' }}</div>
+    </div>
+    <div class="flex flex-col items-end w-1/3 pl-8 mt-4 md:mt-0">
+      {% if contact.created_at %}
+        <span class="text-xs text-blue-500 mb-2">Creato il {{ contact.created_at.strftime('%d/%m/%Y') }}</span>
+      {% endif %}
+      <div class="text-base font-bold text-slate-700 mb-1">Destinatario</div>
+      <div class="text-sm text-gray-700 bg-blue-100 rounded-lg px-4 py-2">
+        Filiale: {{ 'Tutte' if contact.branch == '*' else contact.branch or '?' }}<br>
+        Tipologia:
+        {% if contact.employment_type is string %}
+          {{ {
+            "TD": "Tempo Determinato",
+            "TI": "Tempo Indeterminato",
+            "AP": "Apprendistato",
+            "CO": "Collaborazione",
+            "*": "Tutte"
+          }[contact.employment_type] }}
+        {% elif contact.employment_type is sequence %}
+          {% for t in contact.employment_type %}
+            {{ {
+              "TD": "Tempo Determinato",
+              "TI": "Tempo Indeterminato",
+              "AP": "Apprendistato",
+              "CO": "Collaborazione",
+              "*": "Tutte"
+            }[t] }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          ?
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% if current_user.role == "admin" %}
+  <div class="flex gap-2 mt-2 md:mt-0">
+    <button
+      hx-get="/contatti/{{ contact._id }}/edit"
+      hx-target="#modal-body"
+      hx-swap="innerHTML"
+      class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
+      Modifica
+    </button>
+    <button
+      type="button"
+      data-delete-url="/contatti/{{ contact._id }}"
+      data-contact-id="{{ contact._id }}"
+      class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      Elimina
+    </button>
+  </div>
+  {% endif %}
+</div>
+
+<script type="module">
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('click', e => {
+    const deleteBtn = e.target.closest('[data-delete-url]');
+    
+    if (deleteBtn) {
+      e.preventDefault();
+      const url = deleteBtn.dataset.deleteUrl;
+      const contactId = deleteBtn.dataset.contactId;
+      const contactElement = document.querySelector(`#contact-${contactId}`);
+      
+      Swal.fire({
+        title: 'Sei sicuro?',
+        text: 'Questa azione non può essere annullata',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // Facciamo la chiamata DELETE manualmente
+          fetch(url, {
+            method: 'DELETE',
+            headers: {
+              'HX-Request': 'true'
+            }
+          }).then(async response => {
+            if (response.ok) {
+              // Otteniamo l'HX-Trigger header
+              const triggerHeader = response.headers.get('HX-Trigger');
+              console.log('[DEBUG] HX-Trigger header ricevuto:', triggerHeader);
+              
+              // Rimuoviamo l'elemento dalla UI e emettiamo l'evento
+              if (contactElement) {
+                contactElement.remove();
+                eventBus.emit('resource/delete', {
+                  type: 'contact',
+                  id: contactId
+                });
+              }
+
+              if (triggerHeader) {
+                try {
+                  const triggerData = JSON.parse(triggerHeader);
+                  console.log('[DEBUG] Trigger data parsato:', triggerData);
+                  if (triggerData.showAdminConfirmation) {
+                    const conf = triggerData.showAdminConfirmation;
+                    console.log('[DEBUG] Configurazione conferma admin:', conf);
+                    // Mostriamo il messaggio di conferma all'admin
+                    Swal.fire({
+                      title: conf.title,
+                      text: conf.message,
+                      icon: conf.level,
+                      timer: conf.duration,
+                      showConfirmButton: false
+                    });
+                  }
+                } catch (error) {
+                  console.error('[DEBUG] Errore parsing trigger data:', error);
+                }
+              }
+            }
+          }).catch(error => {
+            console.error('[DEBUG] Errore durante la chiamata DELETE:', error);
+          });
+        }
+      });
+    }
+  });
+</script> 

@@ -1,60 +1,30 @@
-{% set u = request.state.user %}
+{% set u           = request.state.user %}
+{% set pinned_json = request.session.get('pinned_items', []) | tojson %}
+{% set ts = datetime.utcnow().timestamp() %}
 
 <!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title or "HQ Engineering" }}</title>
+  
+  <!-- CSS -->
   <link href="{{ url_for('static', path='css/hqe.bundle.css') }}" rel="stylesheet">
-  <link href="{{ url_for('static', path='css/comments.css') }}" rel="stylesheet">
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
-  <script type="module" src="/static/js/core/event-bus-global.js"></script>
-  <script>
-    // forza l'invio di cookie in tutti i request htmx
-    htmx.config.withCredentials = true;
-
-    // Debug HTMX
-    document.addEventListener('htmx:beforeRequest', function(evt) {
-      console.log('HTMX Request:', evt.detail);
-    });
-    document.addEventListener('htmx:afterRequest', function(evt) {
-      console.log('HTMX Response (generico):', evt.detail);
-      if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath === '/notifiche/inline') {
-        console.log('[HTMX Response SPECIFICO per /notifiche/inline]');
-        console.log('  XHR Status:', evt.detail.xhr.status);
-        console.log('  XHR ResponseText:', evt.detail.xhr.responseText);
-        console.log('  Target Element:', evt.detail.target);
-        console.log('  Failed:', evt.detail.failed);
-        console.log('  Successful:', evt.detail.successful);
-      }
-    });
-    document.addEventListener('htmx:error', function(evt) {
-      console.error('HTMX Error:', evt.detail);
-    });
-  </script>
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script type="module" src="/static/js/features/notifications/index.js"></script>
-  <script type="module">
-    // Test toast
-    import { showToast } from "/static/js/features/notifications/toast.js";
-    document.addEventListener('DOMContentLoaded', () => {
-      showToast({ title: "Toast OK", body: "Sistema notifiche pronto", type: "success" });
-    });
-  </script>
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      document.body.addEventListener('closeModal', () => {
-        const modal = document.querySelector('.fixed.inset-0');
-        if (modal) {
-          modal.classList.add('hidden');
-        }
-      });
-    });
-  </script>
-  <!-- Alpine.js per i modali e x-cloak -->
+  <link href="{{ url_for('static', path='tailwind.css') }}?v={{ ts }}" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js@1.12.0/src/toastify.css">
+  
+  <!-- Librerie JS Esterne -->
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- Core JS - PRIMA DI TUTTO -->
+  <script type="module" src="/static/js/core/bootstrap.js?v={{ ts }}"></script>
+  <script type="module" src="/static/js/core/cleanup.js?v={{ ts }}"></script>
+
   <style>
-    [x-cloak]{ display:none !important; }
+    [x-cloak] { display: none !important; }
     html, body { height: 100%; margin: 0; padding: 0; background: none !important; }
     .font-montserrat { font-family: 'Montserrat', Arial, sans-serif; }
     .page-border-wrapper {
@@ -62,7 +32,7 @@
       border-radius: 2.5rem;
       box-sizing: border-box;
       min-height: 100vh;
-      padding: 0 0 0 0;
+      padding: 0;
       background: transparent;
       width: 100%;
       max-width: 100vw;
@@ -77,180 +47,19 @@
       border-radius: 2.5rem;
     }
   </style>
+
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">
+
+  <!-- DEBUG - Pinned Items: {{ pinned_json }} -->
+
   {% block head %}{% endblock %}
-  <title>{{ page_title or "HQ Engineering" }}</title>
-  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 </head>
 
-<body hx-ext="morph" class="bg-slate-50 font-sans" data-user-role="{{ user.role if user else '' }}" data-user-id="{{ user._id|string if user else '' }}">
+<body hx-ext="morph" class="bg-slate-50 font-sans" data-user-role="{{ u.role if u else '' }}" data-user-id="{{ u._id|string if u else '' }}" data-pinned-items='{{ pinned_json|safe }}'>
 
-  <div id="ws-debugger" style="position: fixed; bottom: 10px; right: 10px; z-index: 9999; width: 20px; height: 20px; border-radius: 50%; background-color: gray; border: 2px solid black;" title="WebSocket Debugger"></div>
-
-  <div class="{% if request.path == '/' %}page-border-wrapper page-bg{% else %}page-content-wrapper{% endif %}">
-
-  <!-- HEADER rimosso: ora la home è senza header classico, solo hamburger e logo nella pagina -->
-
-  {% block content %}{% endblock %}
-
-  <!-- Modal full-screen, inizialmente invisibile -->
-  <div id="modal-overlay"
-       class="fixed inset-0 z-50 hidden bg-slate-900/50 backdrop-blur-sm flex items-start justify-center overflow-y-auto scroll-pt-10 scroll-pb-[5rem] p-4">
-    <div id="modal-body"
-         class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 max-h-[calc(100vh-12rem)] overflow-y-auto pb-32">
-         <!-- qui HTMX inietterà il form -->
-    </div>
-  </div>
-  <script>
-    // Chiudi modale cliccando fuori
-    document.getElementById('modal-overlay').addEventListener('click', e => {
-        if (e.target.id === 'modal-overlay') e.currentTarget.classList.add('hidden');
-    });
-    // Mostra modale ogni volta che #modal-body viene riempito da HTMX
-    document.body.addEventListener('htmx:afterSwap', e => {
-        if (e.detail.target.id === 'modal-body') {
-            document.getElementById('modal-overlay').classList.remove('hidden');
-        }
-    });
-  </script>
-
-  <!-- Barra di navigazione in basso, visibile su tutte le pagine -->
-  <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 shadow-2xl rounded-2xl border-t border-gray-100 max-w-5xl w-full flex justify-between items-center px-10 py-3 gap-8">
-      <div class="w-full flex justify-between items-center gap-8">
-          <a href="/" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Home: icona casa colorata -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <path d="M3 12L12 4l9 8" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
-                <rect x="7" y="14" width="10" height="6" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Home</span>
-          </a>
-          <a href="/messaggi" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Messaggi: icona busta colorata -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <rect x="3" y="7" width="18" height="12" rx="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
-                <path d="M3 7l9 7 9-7" stroke="#22c55e" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Messaggi</span>
-          </a>
-          <a href="/news" class="group relative flex flex-col items-center text-purple-800 hover:text-purple-600 flex-1 min-w-[64px]">
-              <!-- News: icona megafono viola -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <path d="M3 14V10a1 1 0 0 1 1-1h2l7-4v14l-7-4H4a1 1 0 0 1-1-1z" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
-                <path d="M21 12a3 3 0 0 0-3-3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
-                <path d="M21 12a3 3 0 0 1-3 3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">News</span>
-              {% if user %}{% include "components/nav_news_badge.html" %}{% endif %}
-          </a>
-          <a href="/documents" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Documenti: icona documento colorata -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <rect x="5" y="3" width="14" height="18" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
-                <path d="M9 7h6M9 11h6M9 15h2" stroke="#2563eb" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Documenti</span>
-              {% include "components/nav_documenti_badge.html" %}
-          </a>
-          <a href="/contatti" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Contatti: icona utente colorata -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <circle cx="12" cy="9" r="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
-                <ellipse cx="12" cy="19" rx="7" ry="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Contatti</span>
-              {% set unread_contatti_count = new_contacts_count if new_contacts_count is defined else 0 %}
-              {% include "components/nav_contatti_badge.html" %}
-          </a>
-          <a href="/ai-news" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- AI News: icona robot colorata aggiornata e più grande -->
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <!-- Antenne laterali -->
-                <rect x="2.5" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
-                <rect x="18.7" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
-                <!-- Testa robot: rettangolo più squadrato e grande -->
-                <rect x="5" y="4.5" width="14" height="13" rx="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
-                <!-- Occhi: blu, più grandi -->
-                <circle cx="10" cy="11" r="1.4" fill="#2563eb"/>
-                <circle cx="14" cy="11" r="1.4" fill="#2563eb"/>
-                <!-- Bocca: linea verde, più grande -->
-                <rect x="10" y="15.2" width="4" height="1.4" rx="0.7" fill="#22c55e"/>
-                <!-- Antenna centrale -->
-                <rect x="11.2" y="2.5" width="1.6" height="2.5" rx="0.8" fill="#2563eb"/>
-                <circle cx="12" cy="2" r="0.9" fill="#2563eb"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">News AI</span>
-              {% if u %}
-                {% set new_ai_news_count = new_ai_news_count if new_ai_news_count is defined else 0 %}
-                {% set unread_ai_news_count = new_ai_news_count %}
-                {% include "components/nav_ai_news_badge.html" %}
-              {% endif %}
-          </a>
-          {% if u %}
-          <a href="/links" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Link utili: globo colorato friendly -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2" fill="#e0f2fe"/>
-                <path d="M2 12h20" stroke="#22c55e" stroke-width="2"/>
-                <path d="M12 2a15.3 15.3 0 0 1 0 20" stroke="#fbbf24" stroke-width="2"/>
-                <path d="M12 2a15.3 15.3 0 0 0 0 20" stroke="#f87171" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Link</span>
-              {% set unread_link_count = 0 %}
-              {% if unread_counts is defined and unread_counts %}
-                {% set unread_link_count = unread_counts.get('link', 0) %}
-              {% endif %}
-              {% include "components/nav_links_badge.html" %}
-          </a>
-          {% endif %}
-          <a href="/organigramma" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Organigramma: icona documento colorata -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                <rect x="3" y="3" width="18" height="18" rx="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
-                <path d="M7 8h10M7 12h10M7 16h10" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Organigramma<br>e procedure</span>
-          </a>
-          {% if u and u.role == "admin" %}
-          <a href="/soci" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
-              <!-- Icona Soci: user group -->
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1 nav-ico-anim"
-                   style="transition: transform 0.2s; will-change: transform;"
-                   onmouseover="this.style.transform='translateY(-6px) scale(1.15)'"
-                   onmouseout="this.style.transform='none'">
-                  <circle cx="8" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
-                  <circle cx="16" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
-                  <ellipse cx="12" cy="18" rx="8" ry="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
-              </svg>
-              <span class="text-[13px] leading-tight font-medium text-center">Soci</span>
-          </a>
-          {% endif %}
-      </div>
-  </nav>
+  <div id="ws-debugger"
+       class="fixed bottom-2.5 right-2.5 z-50 w-5 h-5 rounded-full border-2 border-black bg-gray-400"
+       title="WebSocket: in attesa…"></div>
 
   <!-- HAMBURGER MENU in alto a destra -->
   <div x-data="{ open: false }" class="fixed top-6 right-6 z-50">
@@ -280,38 +89,232 @@
     </div>
   </div>
 
-  <!-- NOTIFICHE INLINE (aggiornamento automatico) -->
-  {# RIMOSSO: barra gialla notifiche inline #}
+  <!-- Barra di navigazione in basso, visibile su tutte le pagine -->
+  <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 shadow-2xl rounded-2xl border-t border-gray-100 max-w-5xl w-full flex justify-between items-center px-10 py-3 gap-8">
+      <div class="w-full flex justify-between items-center gap-8">
+          <a href="/" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Home -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <path d="M3 12L12 4l9 8" stroke="#2563eb" stroke-width="2" stroke-linecap="round"/>
+                <rect x="7" y="14" width="10" height="6" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Home</span>
+          </a>
+          <a href="/messaggi" class="flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Messaggi -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <rect x="3" y="7" width="18" height="12" rx="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+                <path d="M3 7l9 7 9-7" stroke="#22c55e" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Messaggi</span>
+          </a>
+          <a href="/news" class="group relative flex flex-col items-center text-purple-800 hover:text-purple-600 flex-1 min-w-[64px]">
+              <!-- News -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <path d="M3 14V10a1 1 0 0 1 1-1h2l7-4v14l-7-4H4a1 1 0 0 1-1-1z" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+                <path d="M21 12a3 3 0 0 0-3-3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+                <path d="M21 12a3 3 0 0 1-3 3" stroke="#a78bfa" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">News</span>
+              {% if u %}{% include "components/nav_news_badge.html" %}{% endif %}
+          </a>
+          <a href="/documents" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Documenti -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <rect x="5" y="3" width="14" height="18" rx="2" fill="#fbbf24" stroke="#2563eb" stroke-width="2"/>
+                <path d="M9 7h6M9 11h6M9 15h2" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Documenti</span>
+              {% include "components/nav_documenti_badge.html" %}
+          </a>
+          <a href="/contatti" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Contatti -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <circle cx="12" cy="9" r="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <ellipse cx="12" cy="19" rx="7" ry="3" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Contatti</span>
+              {% include "components/nav_contatti_badge.html" %}
+          </a>
+          <a href="/ai-news" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- AI News -->
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <rect x="2.5" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
+                <rect x="18.7" y="9" width="2.8" height="6" rx="1.2" fill="#2563eb"/>
+                <rect x="5" y="4.5" width="14" height="13" rx="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="10" cy="11" r="1.4" fill="#2563eb"/>
+                <circle cx="14" cy="11" r="1.4" fill="#2563eb"/>
+                <rect x="10" y="15.2" width="4" height="1.4" rx="0.7" fill="#22c55e"/>
+                <rect x="11.2" y="2.5" width="1.6" height="2.5" rx="0.8" fill="#2563eb"/>
+                <circle cx="12" cy="2" r="0.9" fill="#2563eb"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">News AI</span>
+              {% if u %}{% include "components/nav_ai_news_badge.html" %}{% endif %}
+          </a>
+          {% if u %}
+          <a href="/links" class="group relative flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Link utili -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2" fill="#e0f2fe"/>
+                <path d="M2 12h20" stroke="#22c55e" stroke-width="2"/>
+                <path d="M12 2a15.3 15.3 0 0 1 0 20" stroke="#fbbf24" stroke-width="2"/>
+                <path d="M12 2a15.3 15.3 0 0 0 0 20" stroke="#f87171" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Link</span>
+               {% include "components/nav_links_badge.html" %}
+          </a>
+          {% endif %}
+          <a href="/organigramma" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Organigramma -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <rect x="3" y="3" width="18" height="18" rx="4" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <path d="M7 8h10M7 12h10M7 16h10" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Organigramma<br>e procedure</span>
+          </a>
+          {% if u and u.role == "admin" %}
+          <a href="/soci" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
+              <!-- Icona Soci -->
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" class="mb-1">
+                <circle cx="8" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <circle cx="16" cy="10" r="3" fill="#a7f3d0" stroke="#2563eb" stroke-width="2"/>
+                <ellipse cx="12" cy="18" rx="8" ry="4" fill="#e0f2fe" stroke="#2563eb" stroke-width="2"/>
+              </svg>
+              <span class="text-[13px] leading-tight font-medium text-center">Soci</span>
+          </a>
+          {% endif %}
+      </div>
+  </nav>
 
-  <script>
-    window.showDelete = function (btn) {
-      Swal.fire({
-        title: 'Sei sicuro?',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Sì, elimina',
-        cancelButtonText: 'Annulla',
-      }).then(r => {
-        if (r.isConfirmed) btn.closest('form').requestSubmit();
+  <div class="{% if request.path == '/' %}page-border-wrapper page-bg{% else %}page-content-wrapper{% endif %}">
+    {# {% include 'components/header.html' %} #}
+
+    {% block content %}{% endblock %}
+
+    <!-- Moduli delle singole feature -->
+    <script type="module" src="/static/js/features/notifications/index.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/highlights/ws.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/news-ticker/index.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/horizontal-scroll/index.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/animations/index.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/pinning/index.js?v={{ ts }}"></script>
+    <script type="module" src="/static/js/features/pinning/ws-handlers.js?v={{ ts }}"></script>
+
+    <script>
+      // Configurazione globale di HTMX e altre utility
+      htmx.config.withCredentials = true;
+
+      window.showDelete = function (btn) {
+        Swal.fire({
+          title: 'Sei sicuro?',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Sì, elimina',
+          cancelButtonText: 'Annulla',
+        }).then(r => {
+          if (r.isConfirmed) btn.closest('form').requestSubmit();
+        });
+      };
+
+      // Listener per l'evento showSuccess
+      document.body.addEventListener('showSuccess', function (evt) {
+        const { title, message } = evt.detail;
+        if (title && message) {
+          Swal.fire({
+            title: title,
+            text: message,
+            icon: 'success',
+            timer: 3000,
+            timerProgressBar: true
+          });
+        }
       });
-    };
-  </script>
-  <!-- RIMOSSO: WebSocket globale per notifiche e aggiornamenti real-time, ora gestito solo in ui.js -->
-  {% block scripts %}
-    <!-- Core Scripts -->
-    <script type="module" src="/static/js/core/bootstrap.js"></script>
+    </script>
 
-    <!-- Features -->
-    <script type="module" src="/static/js/features/news-ticker/index.js"></script>
+    <!-- Gestore conferme admin -->
+    <script>
+      document.body.addEventListener('showAdminConfirmation', (evt) => {
+        // evt.detail contiene il payload inviato da HX-Trigger
+        const { title, message, level = 'success', duration = 3000 } = evt.detail;
+        if (title && message) {
+          Swal.fire({
+            title: title,
+            text: message,
+            icon: level,
+            timer: duration,
+            timerProgressBar: true
+          });
+        }
+      });
+    </script>
 
-    <!-- UI globale -->
-    <script type="module" src="/static/js/ui.js"></script>
-  {% endblock %}
-  <script>
-    window.currentUserId = "{{ user._id if user is defined and user and user._id is defined else '' }}";
-    window.currentUserRole = "{{ user.role if user is defined and user and user.role is defined else '' }}";
-  </script>
+    <!-- Script di gestione delle modali -->
+    <script>
+      document.body.addEventListener('htmx:afterSwap', (e) => {
+        console.log('[DEBUG MODALE] htmx:afterSwap evento:', e);
+        console.log('[DEBUG MODALE] Target ID:', e.detail.target.id);
+        console.log('[DEBUG MODALE] Successful:', e.detail.successful);
+        
+        if (e.detail.target.id === 'modal-body' && e.detail.successful) {
+          const modalOverlay = document.getElementById('modal-overlay');
+          console.log('[DEBUG MODALE] Modal overlay trovato:', modalOverlay);
+          
+          if (modalOverlay) {
+            console.log('[DEBUG MODALE] Rimuovo classe hidden');
+            console.log('[DEBUG MODALE] Classi prima:', modalOverlay.className);
+            modalOverlay.classList.remove('hidden');
+            console.log('[DEBUG MODALE] Classi dopo:', modalOverlay.className);
+          }
+        }
+      });
+
+      // Chiusura modale
+      document.addEventListener('click', (e) => {
+        console.log('[DEBUG MODALE] Click evento:', e.target);
+        const closeBtn = e.target.closest('[data-close-modal]');
+        console.log('[DEBUG MODALE] Bottone chiusura trovato:', closeBtn);
+        
+        if (closeBtn) {
+          const modalOverlay = document.getElementById('modal-overlay');
+          console.log('[DEBUG MODALE] Modal overlay per chiusura:', modalOverlay);
+          
+          if (modalOverlay) {
+            console.log('[DEBUG MODALE] Aggiungo classe hidden per chiusura');
+            console.log('[DEBUG MODALE] Classi prima della chiusura:', modalOverlay.className);
+            modalOverlay.classList.add('hidden');
+            console.log('[DEBUG MODALE] Classi dopo la chiusura:', modalOverlay.className);
+          }
+        }
+      });
+
+      // Chiusura modale tramite HX-Trigger
+      document.body.addEventListener('closeModal', (evt) => {
+        console.log('[DEBUG MODALE] Evento closeModal ricevuto:', evt);
+        const modalOverlay = document.getElementById('modal-overlay');
+        console.log('[DEBUG MODALE] Modal overlay per closeModal:', modalOverlay);
+        
+        if (modalOverlay) {
+          console.log('[DEBUG MODALE] Aggiungo classe hidden per closeModal');
+          console.log('[DEBUG MODALE] Classi prima di closeModal:', modalOverlay.className);
+          modalOverlay.classList.add('hidden');
+          console.log('[DEBUG MODALE] Classi dopo closeModal:', modalOverlay.className);
+        }
+      });
+
+      // Debug iniziale
+      console.log('[DEBUG MODALE] Script caricato');
+      console.log('[DEBUG MODALE] Modal overlay iniziale:', document.getElementById('modal-overlay'));
+    </script>
+
+    {% block scripts %}{% endblock %}
   </div>
 
-  </body>
+  <!-- Modale globale -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal-container">
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+</body>
 </html>

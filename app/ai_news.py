@@ -1,31 +1,38 @@
 import json
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, UploadFile, File, Body
-from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, Response, PlainTextResponse
+from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse, Response, PlainTextResponse, JSONResponse
 from app.deps import require_admin, get_current_user, get_docs_coll, get_db
 from app.utils.save_with_notifica import save_and_notify
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from motor.motor_asyncio import AsyncIOMotorCollection
 import aiofiles
 from mimetypes import guess_type
 from app.notifiche import crea_notifica, crea_notifica_commento
 from fastapi.templating import Jinja2Templates
-from app.models.ai_news_model import AINewsBase, AINewsDB, CommentBase, CommentDB
+from app.models.ai_news_model import AINewsBase, AINewsDB, CommentBase, CommentDB, ViewIn, ViewActionType
 from fastapi import Query
-from app.ws_broadcast import broadcast_message
+from app.ws_broadcast import broadcast_message, broadcast_resource_event
 from typing import Optional
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
 import bleach
 import re
+import os
+import shutil
+from app.utils.notification_helpers import create_action_notification_payload, create_admin_confirmation_trigger
 try:
     from markdown_it import MarkdownIt
 except ImportError:
     MarkdownIt = None
+from pymongo import ReturnDocument
 
 # Costante per il percorso base dei documenti AI
 BASE_AI_NEWS_DIR = Path("media/docs/ai_news")   # cartella radice documenti AI
+
+# Costanti di configurazione
+DEBOUNCE_HOURS = 24  # tempo minimo fra due view validanti
 
 def to_str_id(doc: dict) -> dict:
     """Converte l'_id Mongo in stringa per i template Jinja."""
@@ -38,8 +45,7 @@ ai_news_router = APIRouter(tags=["ai_news"])
 
 @ai_news_router.post(
     "/ai-news/upload",
-    status_code=303,
-    response_class=RedirectResponse,
+    response_class=PlainTextResponse,
     dependencies=[Depends(require_admin)]
 )
 async def upload_ai_news(
@@ -97,10 +103,10 @@ async def upload_ai_news(
     # 3. Aggiorna home_highlights
     if show_on_home:
         await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": doc_id},
+            {"type": "ai_news", "object_id": str(doc_id)},
             {"$set": {
                 "type": "ai_news",
-                "object_id": doc_id,
+                "object_id": str(doc_id),
                 "title": title.strip(),
                 "created_at": datetime.utcnow(),
                 "branch": branch.strip(),
@@ -109,7 +115,7 @@ async def upload_ai_news(
             upsert=True
         )
     else:
-        await db.home_highlights.delete_one({"type": "ai_news", "object_id": doc_id})
+        await db.home_highlights.delete_one({"type": "ai_news", "object_id": str(doc_id)})
 
     # 4. Crea la notifica
     await crea_notifica(
@@ -134,7 +140,8 @@ async def upload_ai_news(
                 "data": {
                     "id": str(notifica["_id"]),
                     "message": f"È stato pubblicato un nuovo documento AI: {title.strip()}",
-                    "tipo": "ai_news"
+                    "tipo": "ai_news",
+                    "source_user_id": str(request.state.user["_id"])
                 }
             }
             print(f"[DEBUG AI_NEWS] Invio payload WebSocket: {payload}")
@@ -142,14 +149,22 @@ async def upload_ai_news(
         # Aggiorna highlights home
         if show_on_home:
             payload_highlight = {
-                "type": "update_ai_news_highlight",
-                "data": {"id": str(doc_id)}
+                "type": "refresh_home_highlights"
             }
             await broadcast_message(json.dumps(payload_highlight))
     except Exception as e:
         print("[WebSocket] Errore broadcast su creazione documento AI:", e)
 
-    return RedirectResponse("/ai-news", status_code=303)
+    # Risposta con conferma admin e redirect
+    resp = PlainTextResponse(status_code=200)
+    # Prima mostra la conferma
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title.strip())
+    # Poi chiudi la modale e fai il redirect
+    resp.headers["HX-Trigger-After-Settle"] = json.dumps({
+        "closeModal": "true",
+        "redirect-to-ai-news": "/ai-news"
+    })
+    return resp
 
 @ai_news_router.get("/ai-news/upload", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
 async def show_upload_form(request: Request):
@@ -175,7 +190,7 @@ async def edit_ai_news_form(
     if not doc:
         raise HTTPException(404, "Documento AI non trovato")
     # Verifica se il documento è in evidenza
-    highlight = await db.home_highlights.find_one({"type": "ai_news", "object_id": ObjectId(doc_id)})
+    highlight = await db.home_highlights.find_one({"type": "ai_news", "object_id": str(doc_id)})
     doc = to_str_id(doc)
     doc["show_on_home"] = bool(highlight)
     return request.app.state.templates.TemplateResponse(
@@ -219,10 +234,10 @@ async def edit_ai_news_submit(
     # Gestione home_highlights
     if show_on_home:
         await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": ObjectId(doc_id)},
+            {"type": "ai_news", "object_id": str(doc_id)},
             {"$set": {
                 "type": "ai_news",
-                "object_id": ObjectId(doc_id),
+                "object_id": str(doc_id),
                 "title": title.strip(),
                 "created_at": datetime.utcnow(),
                 "branch": branch.strip(),
@@ -231,7 +246,7 @@ async def edit_ai_news_submit(
             upsert=True
         )
     else:
-        await db.home_highlights.delete_one({"type": "ai_news", "object_id": ObjectId(doc_id)})
+        await db.home_highlights.delete_one({"type": "ai_news", "object_id": str(doc_id)})
 
     # Dopo l'update, crea una nuova notifica per i nuovi destinatari
     await crea_notifica(
@@ -259,8 +274,7 @@ async def edit_ai_news_submit(
         # Aggiorna highlights home SOLO se show_on_home
         if show_on_home:
             payload_highlight = {
-                "type": "update_ai_news_highlight",
-                "data": {"id": str(doc_id)}
+                "type": "refresh_home_highlights"
             }
             await broadcast_message(json.dumps(payload_highlight))
         # Toast giallo e badge (a tutti)
@@ -270,8 +284,9 @@ async def edit_ai_news_submit(
                 "type": "new_notification",
                 "data": {
                     "id": str(notifica["_id"]),
-                    "message": f"Documento AI modificato: {title.strip()}",
-                    "tipo": "ai_news"
+                    "message": f"Il documento AI è stato modificato: {title.strip()}",
+                    "tipo": "ai_news",
+                    "source_user_id": str(request.state.user["_id"])
                 }
             }
             await broadcast_message(json.dumps(payload_toast))
@@ -371,13 +386,22 @@ async def list_ai_news(
     )
 
 @ai_news_router.delete("/ai-news/{doc_id}")
-async def delete_ai_news(request: Request, doc_id: str):
+async def delete_ai_news(
+    request: Request, 
+    doc_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     db = request.app.state.db
+    
     # Recupera info documento prima di eliminare
     doc = await db.ai_news.find_one({"_id": ObjectId(doc_id)})
-    title = doc["title"] if doc else ""
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento AI non trovato")
+    
+    # Elimina il documento
     await db.ai_news.delete_one({"_id": ObjectId(doc_id) if ObjectId.is_valid(doc_id) else doc_id})
-    # rimuovi eventuale highlight
+    
+    # Rimuovi eventuale highlight
     try:
         obj_id = ObjectId(doc_id)
     except Exception:
@@ -389,38 +413,28 @@ async def delete_ai_news(request: Request, doc_id: str):
             {"object_id": str(doc_id)}
         ]
     })
-    # Invia WebSocket
-    # Invia WebSocket
-    try:
-        from app.ws_broadcast import broadcast_message
-        # Aggiorna lista documenti
-        payload_remove = {
-            "type": "remove_ai_news",
-            "data": {
-                "id": str(doc_id),
-                "user_id": str(request.state.user['_id'])
-            }
-        }
-        await broadcast_message(json.dumps(payload_remove))
-        # Aggiorna highlights home
-        payload_highlight = {
-            "type": "update_ai_news_highlight",
-            "data": {"id": str(doc_id)}
-        }
-        await broadcast_message(json.dumps(payload_highlight))
-        # Toast rosso e badge (a tutti)
-        payload_toast = {
-            "type": "new_notification",
-            "data": {
-                "id": str(doc_id),
-                "message": f"Documento AI eliminato: {title}",
-                "tipo": "ai_news"
-            }
-        }
-        await broadcast_message(json.dumps(payload_toast))
-    except Exception as e:
-        print("[WebSocket] Errore broadcast su eliminazione documento AI:", e)
-    return Response(status_code=200, media_type="text/plain")
+
+    # 1. Notifica WebSocket ai destinatari (tutti tranne l'admin)
+    payload = create_action_notification_payload('delete', 'ai_news', doc.get('title', ''), str(current_user["_id"]))
+    await broadcast_message(
+        payload,
+        branch=doc.get('branch', '*'),
+        employment_type=doc.get('employment_type', ['*']),
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Aggiornamento highlights
+    await broadcast_resource_event(
+        event="delete",
+        item_type="ai_news",
+        item_id=str(doc_id),
+        user_id=str(current_user["_id"])
+    )
+
+    # 3. Conferma per l'admin
+    resp = Response(status_code=200)
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', doc.get('title', ''))
+    return resp
 
 @ai_news_router.get("/api/ai-news")
 async def list_ai_news_api(
@@ -534,31 +548,67 @@ async def update_ai_news_api(
     await broadcast_message(f"update:ai_news:{news_id}")
     return {"modified_count": result.modified_count}
 
-@ai_news_router.post("/api/ai-news/{news_id}/view")
-async def track_ai_news_view(
+@ai_news_router.post("/{news_id}/view")
+async def add_view(
     news_id: str,
+    payload: ViewIn,
     request: Request,
-    current_user = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user)
 ):
+    # ── 1. gli admin non contano ----------------------------------
+    if current_user.get("role") == "admin":
+        return {"success": True, "debounced": True}
+
+    now = datetime.utcnow()
+    threshold = now - timedelta(hours=DEBOUNCE_HOURS)
+
     db = request.app.state.db
-    view_doc = {
-        "news_id": ObjectId(news_id),
-        "user_id": ObjectId(current_user["_id"]),
-        "timestamp": datetime.utcnow(),
-        "ip_address": request.client.host,
-        "user_agent": request.headers.get("user-agent", "")
-    }
-    await db.ai_news_views.insert_one(view_doc)
-    await db.ai_news.update_one(
-        {"_id": ObjectId(news_id)},
-        {"$inc": {"stats.views": 1}}
+    views_col = db.ai_news_views
+    news_col = db.ai_news
+
+    # ── 2. upsert + check last_view -------------------------------
+    result = await views_col.find_one_and_update(
+        {"user_id": current_user["_id"], "news_id": ObjectId(news_id)},
+        {
+            # se il documento NON esiste -> inserisci ora
+            "$setOnInsert": {"action": payload.action_type, "last_view": now},
+            # se esiste ed è vecchio -> aggiorna last_view
+            "$set": {"last_view": now}
+        },
+        upsert=True,
+        return_document=ReturnDocument.BEFORE  # ottieni doc PRIMA dell'update
     )
-    # Invia messaggio WebSocket come JSON
-    await broadcast_message(json.dumps({
-        "type": "stats:ai_news",
-        "data": {"news_id": str(news_id), "action": "view"}
-    }))
-    return {"success": True}
+
+    # result == None  → era un inserimento; contatore da incrementare
+    # result.last_view < threshold → contatore da incrementare
+    # altrimenti debounce
+    should_increment = (
+        result is None or
+        result["last_view"] < threshold
+    )
+
+    if not should_increment:
+        print("[DEBUG_AI_NEWS] view debounced")
+        return {"success": True, "debounced": True}
+
+    # ── 3. incrementa il campo views sulla news -------------------
+    update = {"$inc": {"stats.views": 1}}
+    new_doc = await news_col.find_one_and_update(
+        {"_id": ObjectId(news_id)},
+        update,
+        return_document=ReturnDocument.AFTER,
+        projection={"stats.views": 1}
+    )
+    new_total = new_doc["stats"]["views"]
+
+    # ── 4. broadcast realtime a tutti i client --------------------
+    await broadcast_message({
+        "type": "view/update",
+        "news_id": news_id,
+        "views": new_total
+    })
+
+    return {"success": True, "views": new_total}
 
 @ai_news_router.post("/api/ai-news/{news_id}/like")
 async def toggle_ai_news_like(
@@ -600,23 +650,19 @@ async def toggle_ai_news_like(
     }
 
 @ai_news_router.get("/api/ai-news/{news_id}/stats")
-async def get_ai_news_stats(
+async def get_stats(
     news_id: str,
     request: Request,
     current_user = Depends(get_current_user)
 ):
     db = request.app.state.db
-    news = await db.ai_news.find_one({"_id": ObjectId(news_id)})
-    if not news:
-        raise HTTPException(status_code=404, detail="News non trovata")
-    user_like = await db.ai_news_likes.find_one({
-        "news_id": ObjectId(news_id),
-        "user_id": ObjectId(current_user["_id"])
+    
+    # Conta i commenti
+    total_comments = await db.ai_news_comments.count_documents({"news_id": ObjectId(news_id)})
+    
+    return JSONResponse({
+        "comments": total_comments
     })
-    return {
-        "stats": news.get("stats", {"views": 0, "likes": 0, "comments": 0}),
-        "user_liked": bool(user_like)
-    }
 
 @ai_news_router.get("/api/ai-news/{news_id}/comments")
 async def get_comments(
@@ -680,107 +726,66 @@ async def get_comments(
         print(f"[ERROR] Errore nel caricamento dei commenti: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@ai_news_router.post("/api/ai-news/{news_id}/comments")
+@ai_news_router.post("/api/ai-news/{news_id}/comments", dependencies=[Depends(get_current_user)])
 async def add_comment(
     news_id: str,
     request: Request,
-    content: Optional[str] = Form(None),
-    parent_id: Optional[str] = Form(None),
-    comment: Optional[CommentBase] = Body(None),
-    user = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
-    try:
-        if comment and comment.content:
-            comment_data = comment.dict()
-            # Pulizia spazi bianchi dal contenuto
-            comment_data["content"] = comment_data["content"].strip()
-        elif content:
-            comment_data = {
-                "content": content.strip(),  # Pulizia spazi bianchi
-                "parent_id": parent_id
-            }
-        else:
-            raise HTTPException(422, "Content richiesto")
-
-        db = request.app.state.db
-        # Validazione degli ID
-        try:
-            news_id_obj = ObjectId(news_id)
-            user_id_obj = ObjectId(user["_id"])
-            parent_id_obj = ObjectId(comment_data["parent_id"]) if comment_data.get("parent_id") else None
-        except Exception as e:
-            raise HTTPException(400, f"ID non valido: {str(e)}")
-
-        # Verifica esistenza news
-        news = await db.ai_news.find_one({"_id": news_id_obj})
-        if not news:
-            raise HTTPException(404, "News non trovata")
-
-        # Verifica esistenza commento padre se presente
-        if parent_id_obj:
-            parent = await db.ai_news_comments.find_one({"_id": parent_id_obj})
-            if not parent:
-                raise HTTPException(404, "Commento padre non trovato")
-
-        # Crea il commento
-        comment_doc = {
-            "news_id": news_id_obj,
-            "author_id": user_id_obj,
-            "content": comment_data["content"],
-            "parent_id": parent_id_obj,
-            "created_at": datetime.utcnow(),
-            "likes": 0,
-            "replies_count": 0
+    db = request.app.state.db
+    data = await request.json()
+    
+    # Verifica che la news esista
+    news = await db.ai_news.find_one({"_id": ObjectId(news_id)})
+    if not news:
+        raise HTTPException(status_code=404, detail="News non trovata")
+    
+    # Crea il commento
+    comment = {
+        "_id": ObjectId(),
+        "news_id": ObjectId(news_id),
+        "user_id": current_user["_id"],
+        "content": data["content"],
+        "created_at": datetime.utcnow(),
+        "likes": [],
+        "replies_count": 0
+    }
+    
+    await db.ai_news_comments.insert_one(comment)
+    
+    # Aggiorna le statistiche
+    await db.ai_news.update_one(
+        {"_id": ObjectId(news_id)},
+        {"$inc": {"stats.comments": 1}}
+    )
+    
+    # Calcola il nuovo totale
+    new_total = await db.ai_news_comments.count_documents({"news_id": ObjectId(news_id)})
+    
+    # Prepara il commento per il frontend
+    comment_out = {
+        **comment,
+        "_id": str(comment["_id"]),
+        "news_id": str(comment["news_id"]),
+        "user_id": str(comment["user_id"]),
+        "created_at": comment["created_at"].isoformat(),
+        "user": {
+            "_id": str(current_user["_id"]),
+            "name": current_user["name"],
+            "avatar": current_user.get("avatar", "")
         }
-        result = await db.ai_news_comments.insert_one(comment_doc)
-        comment_id = str(result.inserted_id)
-
-        # Aggiorna il contatore dei commenti della news
-        await db.ai_news.update_one(
-            {"_id": news_id_obj},
-            {"$inc": {"stats.comments": 1}}
-        )
-
-        # Se è una risposta, aggiorna il contatore delle risposte del commento padre
-        if parent_id_obj:
-            await db.ai_news_comments.update_one(
-                {"_id": parent_id_obj},
-                {"$inc": {"replies_count": 1}}
-            )
-
-        # Crea notifiche per gli utenti non connessi
-        try:
-            await crea_notifica_commento(
-                request=request,
-                news_id=news_id,
-                comment_id=comment_id,
-                author_id=str(user_id_obj),
-                parent_id=str(parent_id_obj) if parent_id_obj else None,
-                mentioned_users=comment_data.get("mentions", [])
-            )
-        except Exception as e:
-            print(f"[ERROR] Errore nella creazione delle notifiche: {str(e)}")
-
-        # Invia notifica real-time tramite WebSocket
-        try:
-            from app.ws_broadcast import broadcast_message
-            await broadcast_message(json.dumps({
-                "type": "comment:ai_news",
-                "data": {
-                    "ai_news_id": str(news_id),
-                    "comment_id": str(comment_id),
-                    "author_id": str(user["_id"]),
-                    "action": "create"
-                }
-            }))
-        except Exception as e:
-            print(f"[ERROR] Errore nell'invio della notifica WebSocket: {str(e)}")
-
-        return {"id": comment_id}
-
-    except Exception as e:
-        print(f"[ERROR] Errore nella creazione del commento: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    }
+    
+    # Invia il nuovo payload WebSocket unificato
+    await broadcast_message({
+        "type": "comment/add",
+        "news_id": news_id,
+        "comment": comment_out,
+        "author": str(current_user["_id"]),
+        "total": new_total
+    })
+    
+    return JSONResponse(comment_out)
 
 @ai_news_router.delete("/api/ai-news/comments/{comment_id}")
 async def delete_comment(
@@ -792,27 +797,32 @@ async def delete_comment(
     comment = await db.ai_news_comments.find_one({"_id": ObjectId(comment_id)})
     if not comment:
         raise HTTPException(status_code=404, detail="Commento non trovato")
-    if str(comment["author_id"]) != str(current_user["_id"]) and current_user["role"] != "admin":
+    
+    # Verifica autorizzazione
+    if str(comment["user_id"]) != str(current_user["_id"]) and current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Non autorizzato")
+    
     await db.ai_news_comments.delete_one({"_id": ObjectId(comment_id)})
+    
+    # Calcola il nuovo totale
+    new_total = await db.ai_news_comments.count_documents({"news_id": comment["news_id"]})
+    
+    # Aggiorna le statistiche
     await db.ai_news.update_one(
         {"_id": comment["news_id"]},
         {"$inc": {"stats.comments": -1}}
     )
-    if comment.get("parent_id"):
-        await db.ai_news_comments.update_one(
-            {"_id": comment["parent_id"]},
-            {"$inc": {"replies_count": -1}}
-        )
-    await broadcast_message(json.dumps({
-        "type": "comment:ai_news",
-        "data": {
-            "ai_news_id": str(comment["news_id"]),
-            "comment_id": str(comment["_id"]),
-            "action": "delete"
-        }
-    }))
-    return {"success": True}
+    
+    # Invia il nuovo payload WebSocket unificato
+    await broadcast_message({
+        "type": "comment/delete",
+        "news_id": str(comment["news_id"]),
+        "comment_id": str(comment["_id"]),
+        "author": str(current_user["_id"]),
+        "total": new_total
+    })
+    
+    return Response(status_code=204)
 
 @ai_news_router.post("/api/ai-news/comments/{comment_id}/like")
 async def toggle_comment_like(
@@ -1142,3 +1152,129 @@ async def view_ai_news(
             "highlight_news_id": news_id
         }
     )
+
+@ai_news_router.post("/upload", dependencies=[Depends(require_admin)])
+async def upload_ai_news(
+    request: Request,
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    branch: str = Form("*"),
+    employment_type: list[str] = Form(["*"]),
+    show_on_home: bool = Form(False),
+    current_user: dict = Depends(get_current_user)
+):
+    db = request.app.state.db
+    
+    # Salvataggio del file
+    file_path = os.path.join("media", "docs", "ai_news", file.filename)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Inserimento nel database
+    ai_news_data = {
+        "title": title,
+        "filename": file.filename,
+        "branch": branch,
+        "employment_type": employment_type,
+        "show_on_home": show_on_home,
+        "created_at": datetime.utcnow(),
+        "comments": []
+    }
+    result = await db.ai_news.insert_one(ai_news_data)
+    new_id = str(result.inserted_id)
+
+    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha caricato la AI news
+    payload = create_action_notification_payload('create', 'ai_news', title)
+    await broadcast_message(
+        payload,
+        branch=branch,
+        employment_type=employment_type,
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Aggiornamento highlights (se necessario)
+    if show_on_home:
+        await broadcast_resource_event("add", item_type="ai_news", item_id=new_id, user_id=str(current_user["_id"]))
+
+    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
+    resp = Response(status_code=200)
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title)
+    return resp
+
+@ai_news_router.post("/{ai_news_id}/edit", dependencies=[Depends(require_admin)])
+async def edit_ai_news(
+    request: Request,
+    ai_news_id: str,
+    title: str = Form(...),
+    branch: str = Form(...),
+    employment_type: list[str] = Form(...),
+    show_on_home: bool = Form(False),
+    current_user: dict = Depends(get_current_user)
+):
+    db = request.app.state.db
+    await db.ai_news.update_one(
+        {"_id": ObjectId(ai_news_id)},
+        {"$set": {
+            "title": title,
+            "branch": branch,
+            "employment_type": employment_type,
+            "show_on_home": show_on_home
+        }}
+    )
+
+    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha modificato la AI news
+    payload = create_action_notification_payload('update', 'ai_news', title)
+    await broadcast_message(
+        payload,
+        branch=branch,
+        employment_type=employment_type,
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Aggiornamento highlights
+    await broadcast_resource_event("update", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
+
+    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
+    updated_ai_news = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)})
+    resp = request.app.state.templates.TemplateResponse(
+        "ai_news/row_partial.html",
+        {"request": request, "ai_news": updated_ai_news, "current_user": current_user}
+    )
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title)
+    return resp
+
+@ai_news_router.delete("/{ai_news_id}", dependencies=[Depends(require_admin)])
+async def delete_ai_news(request: Request, ai_news_id: str, current_user: dict = Depends(get_current_user)):
+    db = request.app.state.db
+    ai_news_to_delete = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)})
+    if not ai_news_to_delete:
+        raise HTTPException(status_code=404)
+
+    title = ai_news_to_delete['title']
+    branch = ai_news_to_delete.get('branch', '*')
+    employment_type = ai_news_to_delete.get('employment_type', ['*'])
+
+    # Rimozione del file fisico
+    file_path = os.path.join("media", "docs", "ai_news", ai_news_to_delete['filename'])
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    await db.ai_news.delete_one({"_id": ObjectId(ai_news_id)})
+
+    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha eliminato la AI news
+    payload = create_action_notification_payload('delete', 'ai_news', title)
+    await broadcast_message(
+        payload,
+        branch=branch,
+        employment_type=employment_type,
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Aggiornamento highlights
+    await broadcast_resource_event("delete", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
+
+    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
+    resp = Response(status_code=200)
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', title)
+    return resp

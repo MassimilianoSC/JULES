@@ -1,17 +1,38 @@
 # ---------------------------- IMPORT ---------------------------------
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Percorso assoluto del file .env (nella root del progetto)
+ENV_PATH = Path(__file__).resolve().parent / '.env'  # vecchio percorso
+print(f"\n=== LOADING ENV FILE ===\nPath: {ENV_PATH}\nExists: {ENV_PATH.exists()}\n")
+load_dotenv()  # Carica .env dalla directory corrente
+
+import os
+if "SESSION_SECRET" not in os.environ:
+    raise RuntimeError("SESSION_SECRET must be defined")
+SECRET_KEY = os.environ["SESSION_SECRET"]        # ← senza default
+
+print("\n=== APP SECRET KEY ===")
+print(f"First 10 chars: {SECRET_KEY[:10]}")
+print(f"Length: {len(SECRET_KEY)}")
+
 import os, secrets
 import logging
 from contextlib import asynccontextmanager
 from typing import List, Optional, Literal, Dict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from bson import ObjectId    
 from app.news import news_router
 from app.links import links_router
 from app.documents import documents_router, BASE_DOCS_DIR
 from app.contatti import contatti_router
-from app.deps import require_admin, get_current_user           # updated import
+from app.deps import require_admin, get_current_user
+from app.notifiche import notifiche_router
+from app.ai_news import ai_news_router
+from app.soci import soci_router
+from app.organigramma import organigramma_router
+from app.ws_broadcast import websocket_main, broadcast_resource_event, get_ws_user
 
-from dotenv import load_dotenv
 import motor.motor_asyncio
 from bson import ObjectId
 from passlib.hash import bcrypt
@@ -20,7 +41,7 @@ from pydantic import BaseModel, Field
 from fastapi import (
     FastAPI, Request, Depends, HTTPException,
     Form, Response, APIRouter, status,
-    UploadFile, File, Query, WebSocket, WebSocketDisconnect               # ← aggiunto Query
+    UploadFile, File, Query, WebSocket, WebSocketDisconnect
 )
 from fastapi.responses import (
     HTMLResponse, RedirectResponse,
@@ -37,24 +58,68 @@ from werkzeug.utils import secure_filename
 from pymongo.errors import DuplicateKeyError
 from markdown_it import MarkdownIt
 import bleach
+from logging.handlers import RotatingFileHandler
+from pymongo import DESCENDING, ASCENDING
 
 # --- LOGGING ---------------------------------------------------------
+import logging
 
-logging.basicConfig(
-    level=logging.INFO,                       # passa a DEBUG se vuoi più dettaglio
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%H:%M:%S",
-)
+# Configura il logger principale
+logging.basicConfig(level=logging.INFO)
+
+# Crea un logger specifico per l'applicazione
 logger = logging.getLogger("intranet")
+logger.setLevel(logging.INFO)
 
+# Rimuovi gli handler esistenti per evitare duplicati
+logger.handlers = []
+
+# Formattatore per i log su file
+file_formatter = logging.Formatter(
+    '%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%H:%M:%S'
+)
+
+# Formattatore per i log su console (più conciso)
+console_formatter = logging.Formatter(
+    '[%(levelname)s] %(message)s'
+)
+
+# Handler per il file di log
+file_handler = RotatingFileHandler(
+    'intranet.log',
+    maxBytes=1024*1024,  # 1MB
+    backupCount=5
+)
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.DEBUG)
+
+# Handler per la console
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(console_formatter)
+console_handler.setLevel(logging.INFO)
+
+# Aggiungi gli handler al logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
+
+# Riduci il livello di log per alcuni moduli troppo verbosi
+logging.getLogger("motor").setLevel(logging.WARNING)
+logging.getLogger("asyncio").setLevel(logging.WARNING)
+logging.getLogger("websockets").setLevel(logging.WARNING)
 
 # --------------------------- CONFIG ----------------------------------
-load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/intranet")
 
-limiter   = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_remote_address)
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["datetime"] = datetime
+
+def format_datetime(dt):
+    """Formatta una data in formato leggibile"""
+    if not dt:
+        return ""
+    return dt.strftime("%d/%m/%Y %H:%M")
 
 def markdown_filter(text):
     md = MarkdownIt("commonmark", {"breaks": True, "html": False})
@@ -69,7 +134,10 @@ def markdown_filter(text):
     )
     return safe_html
 
+# Registra i filtri
 templates.env.filters["markdown"] = markdown_filter
+templates.env.filters["format_datetime"] = format_datetime
+
 print("Filtri disponibili:", templates.env.filters.keys())
 
 # Costanti per i percorsi
@@ -85,19 +153,33 @@ async def lifespan(app: FastAPI):
     yield
     client.close()
 
-# Crea l'app e assegna templates
-app = FastAPI(lifespan=lifespan)
+# --------------------------- APP INIT ----------------------------------
+app = FastAPI(lifespan=lifespan)                 
+
 app.state.templates = templates
+print("\n=== APP STATE SECRET KEY ===")
+print(f"Setting app.state.secret_key (first 10 chars): {SECRET_KEY[:10]}...")
+app.state.secret_key = SECRET_KEY                
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/media", StaticFiles(directory="media"), name="media")  # 👈 AGGIUNGI QUESTA
+app.mount("/media", StaticFiles(directory="media"), name="media")
 
-app.add_middleware(
+print("\n=== MIDDLEWARE SECRET KEY ===")
+print(f"Configuring SessionMiddleware with key (first 10 chars): {SECRET_KEY[:10]}...")
+
+# Stampa il valore esatto della chiave per debug (RIMUOVERE IN PRODUZIONE!)
+print("DEBUG - Actual secret key:", SECRET_KEY)
+
+app.add_middleware(                              
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", secrets.token_urlsafe(32)),
+    secret_key=SECRET_KEY,
     same_site="lax",
-    https_only=False,  # 👈 disattiva il blocco su HTTP
 )
+
+# Debug middleware configuration
+print("\n=== SESSION MIDDLEWARE CONFIG ===")
+print("Secret Key Length:", len(SECRET_KEY))
+print("Middleware:", [m.cls.__name__ for m in app.user_middleware])
 
 app.state.limiter = limiter
 app.add_exception_handler(429, _rate_limit_exceeded_handler)
@@ -158,6 +240,9 @@ class UserUpdate(BaseModel):
     sex: Optional[Literal["M", "F"]] = None
     citizenship: Optional[str] = None
 
+class PinIn(BaseModel):
+    type: str
+    id: str
 
 # --------------------------- ROUTE UI --------------------------------
 from fastapi.responses import RedirectResponse
@@ -165,240 +250,99 @@ from fastapi.responses import RedirectResponse
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request, user = Depends(get_current_user)):
     db = request.app.state.db
-    
-    # Recupera gli highlights filtrati per branch e hire_type
-    highlights = await db.home_highlights.find().to_list(length=None)
-    print("[DEBUG HOME] highlights trovati in home_highlights:")
-    for h in highlights:
-        print(f"  - {h}")
-    filtered_highlights = []
-    
-    # Safe access to user properties with fallbacks
-    emp_type_user = user.get("employment_type")  # None se mancante
-    branch_user = user.get("branch")             # None se mancante
-    
-    for h in highlights:
-        if h["type"] == "document":
-            doc = await db.documents.find_one({"_id": h["object_id"]})
-            if not doc:
-                continue
-            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
-                filtered_highlights.append(h)
-        elif h["type"] == "ai_news":
-            doc = await db.ai_news.find_one({"_id": h["object_id"]})
-            if not doc:
-                continue
-            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
-                filtered_highlights.append(h)
-        elif h["type"] == "news":
-            news = await db.news.find_one({"_id": h["object_id"]})
-            if not news:
-                continue
-            if (h["branch"] in ("*", branch_user)) and ("*" in h.get("employment_type", ["*"]) or emp_type_user in h.get("employment_type", ["*"])):
-                filtered_highlights.append(h)
-        elif h["type"] == "link":
-            link = await db.links.find_one({"_id": h["object_id"]})
-            if not link:
-                continue
-            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
-                filtered_highlights.append(h)
-        elif h["type"] == "contact":
-            contact = await db.contatti.find_one({"_id": h["object_id"]})
-            if not contact:
-                continue
-            if (h["branch"] in ("*", branch_user)) and ("*" in h["employment_type"] or emp_type_user in h["employment_type"]):
-                filtered_highlights.append(h)
-    filtered_highlights.sort(key=lambda x: x["created_at"], reverse=True)
-    print("[DEBUG HOME] filtered_highlights finali:")
-    for fh in filtered_highlights:
-        print(f"  - {fh}")
+    now = datetime.utcnow()
 
-    # Recupera tutte le news (senza limiti)
-    news = await db.news.find().sort("created_at", -1).to_list(length=None)
+    # --- NUOVA LOGICA PER RECUPERARE LE NEWS ---
     
-    # --- Conteggio notifiche non lette di tipo documento ---
-    user_id = str(user["_id"])
-    emp_type_user = user.get("employment_type")
-    branch_user = user.get("branch")
-    notifica_doc_filter = {
-        "tipo": "documento",
-        "letta_da": {"$ne": user_id},
+    # 1. Filtro per le news non scadute
+    news_filter = {
         "$or": [
-            {"employment_type": {"$in": [emp_type_user, "*"]}},
-            {"employment_type": emp_type_user},
-            {"employment_type": "*"},
-            {"employment_type": {"$exists": False}}
-        ],
-        "branch": {"$in": [branch_user, "*"]}
+            {"expires_at": None},
+            {"expires_at": {"$gt": now}}
+        ]
     }
-    new_docs_count = await db.notifiche.count_documents(notifica_doc_filter)
-    print("Nuove notifiche non lette:", new_docs_count)
 
-    # --- Notifiche NEWS ---
-    new_news_count = await db.notifiche.count_documents({
-        "tipo": "news",
-        "letta_da": {"$ne": user_id}
-    })
+    # 2. Logica di ordinamento: Prima le pinnate, poi per priorità, poi per data
+    sort_logic = [("pinned", DESCENDING), ("priority", ASCENDING), ("created_at", DESCENDING)]
 
-    # --- Notifiche LINK ---
-    notifica_link_filter = {
-        "tipo": "link",
-        "letta_da": {"$ne": user_id},
-        "$or": [
-            {"employment_type": {"$in": [emp_type_user, "*"]}},
-            {"employment_type": emp_type_user},
-            {"employment_type": "*"},
-            {"employment_type": {"$exists": False}}
-        ],
-        "branch": {"$in": [branch_user, "*"]}
+    # 3. Esegui la query
+    news_items = await db.news.find(news_filter).sort(sort_logic).to_list(length=None)
+
+    # --- LOGICA PER GLI ALTRI HIGHLIGHTS (documenti, link, etc.) ---
+    highlights_filter = {
+        "type": {"$ne": "news"} 
     }
-    new_links_count = await db.notifiche.count_documents(notifica_link_filter)
+    other_highlights = await db.home_highlights.find(highlights_filter).to_list(length=None)
+    
+    # Uniamo le news con gli altri highlights
+    all_highlights = news_items + other_highlights
 
-    # --- Notifiche CONTATTI ---
-    notifica_contatti_filter = {
-        "tipo": "contatto",
-        "letta_da": {"$ne": user_id},
-        "$or": [
-            {"employment_type": {"$in": [emp_type_user, "*"]}},
-            {"employment_type": emp_type_user},
-            {"employment_type": "*"},
-            {"employment_type": {"$exists": False}}
-        ],
-        "branch": {"$in": [branch_user, "*"]}
-    }
-    new_contacts_count = await db.notifiche.count_documents(notifica_contatti_filter)
+    # Converti gli ObjectId in stringhe e uniforma l'uso di object_id
+    for h in all_highlights:
+        if "_id" in h:
+            h["_id"] = str(h["_id"])
+        if "id" in h:
+            if "object_id" not in h:
+                h["object_id"] = str(h["id"])
+            del h["id"]
+        if "object_id" in h:
+            h["object_id"] = str(h["object_id"])
 
-    # PATCH: Valorizzo unread_counts per il badge, sempre presente
-    unread_counts = {"link": new_links_count if 'new_links_count' in locals() else 0}
+    # Converti gli ID dei pin in stringhe
+    if "pinned_items" in user:
+        for pin in user["pinned_items"]:
+            if "id" in pin:
+                pin["id"] = str(pin["id"])
 
-    print("[DEBUG HOME] user._id:", user.get("_id"))
-    print("[DEBUG HOME] user.pinned_items:", user.get("pinned_items"))
-
-    return request.app.state.templates.TemplateResponse(
+    return templates.TemplateResponse(
         "home.html",
         {
             "request": request,
             "user": user,
-            "highlights": filtered_highlights,
-            "news": news,
-            "new_docs_count": new_docs_count,
-            "new_news_count": new_news_count,
-            "new_links_count": new_links_count,
-            "new_contacts_count": new_contacts_count,
-            "unread_counts": unread_counts,
+            "highlights": all_highlights,
+            "news_items": news_items
         }
     )
 
 @app.get("/home/highlights/partial", response_class=HTMLResponse)
 async def home_highlights_partial(request: Request, user = Depends(get_current_user)):
     db = request.app.state.db
-    print(f"[REALTIME][HIGHLIGHTS] user_id={user.get('_id')}, branch={user.get('branch')}, employment_type={user.get('employment_type')}")
+    
+    # Recupera gli highlights filtrati per branch e hire_type
     highlights = await db.home_highlights.find().to_list(length=None)
-    print(f"[REALTIME][HIGHLIGHTS] highlights in home_highlights: {[str(h) for h in highlights]}")
-    filtered_highlights = []
-    emp_type_user = user.get("employment_type")
-    branch_user = user.get("branch")
+    
+    # Converti gli ObjectId in stringhe e uniforma l'uso di object_id
     for h in highlights:
-        print(f"[LOG] PROCESSO highlight: {h}")
-        branch_h = h.get("branch", "*")
-        emp_type_h = h.get("employment_type", ["*"])
-        print(f"[LOG] Filtro highlight: branch_h={branch_h}, emp_type_h={emp_type_h}, branch_user={branch_user}, emp_type_user={emp_type_user}")
-        passa_filtro = (branch_h in (branch_user, "*", "Tutte") or branch_user in (None, "*", "Tutte")) and (
-            emp_type_user is None or
-            "*" in emp_type_h or 
-            emp_type_user in emp_type_h or 
-            emp_type_user == "*"
-        )
-        print(f"[LOG] Risultato filtro: {passa_filtro}")
-        if passa_filtro:
-            if h["type"] == "document":
-                doc = await db.documents.find_one({"_id": h["object_id"]})
-                print(f"[LOG] Documento associato: {doc}")
-                if not doc:
-                    continue
-                filtered_highlights.append({
-                    "type": "document",
-                    "id": str(doc["_id"]),
-                    "title": doc["title"],
-                    "filename": doc.get("filename", ""),
-                    "created_at": h["created_at"]
-                })
-            elif h["type"] == "ai_news":
-                doc = await db.ai_news.find_one({"_id": h["object_id"]})
-                print(f"[LOG] AI News associata: {doc}")
-                if not doc:
-                    continue
-                filtered_highlights.append({
-                    "type": "ai_news",
-                    "id": str(doc["_id"]),
-                    "title": doc["title"],
-                    "filename": doc.get("filename", ""),
-                    "external_url": doc.get("external_url", ""),
-                    "created_at": h["created_at"]
-                })
-            elif h["type"] == "link":
-                link = await db.links.find_one({"_id": h["object_id"]})
-                print(f"[LOG] Link associato: {link}")
-                if not link:
-                    continue
-                filtered_highlights.append({
-                    "type": "link",
-                    "id": str(link["_id"]),
-                    "title": link["title"],
-                    "url": link["url"],
-                    "created_at": h["created_at"]
-                })
-            elif h["type"] == "contact":
-                contact = await db.contatti.find_one({"_id": h["object_id"]})
-                print(f"[LOG] Contatto associato: {contact}")
-                if not contact:
-                    continue
-                filtered_highlights.append({
-                    "type": "contact",
-                    "id": str(contact["_id"]),
-                    "title": contact["name"],
-                    "branch": contact["branch"],
-                    "role": contact.get("role", ""),
-                    "employment_type": contact.get("employment_type", []),
-                    "created_at": h["created_at"],
-                    "email": contact.get("email", ""),
-                    "phone": contact.get("phone", ""),
-                    "bu": contact.get("bu", ""),
-                    "team": contact.get("team", ""),
-                    "work_branch": contact.get("work_branch", "")
-                })
-            elif h["type"] == "news":
-                news = await db.news.find_one({"_id": h["object_id"]})
-                print(f"[LOG] News associata: {news}")
-                if not news:
-                    continue
-                filtered_highlights.append({
-                    "type": "news",
-                    "id": str(news["_id"]),
-                    "title": news["title"],
-                    "created_at": h["created_at"],
-                    "branch": news.get("branch", ""),
-                    "employment_type": news.get("employment_type", []),
-                    "content": news.get("content", "")
-                })
-    print(f"[LOG] Lista finale filtered_highlights: {filtered_highlights}")
-    filtered_highlights.sort(key=lambda x: x["created_at"], reverse=True)
-    print("[DEBUG PARTIAL] Highlights restituiti:", filtered_highlights)
-    print("[DEBUG PARTIAL] user._id:", user.get("_id"))
-    print("[DEBUG PARTIAL] user.pinned_items:", user.get("pinned_items"))
-
-    # Aggiorna i pin direttamente dal DB utente per avere la lista aggiornata
-    user_db = await db.users.find_one({"_id": user["_id"]})
-    user["pinned_items"] = user_db.get("pinned_items", [])
-    print("[LOG][ULTIMO] Tutti gli highlights in home_highlights:", highlights)
-    print("[LOG][ULTIMO] Lista finale filtered_highlights:", filtered_highlights)
-    for h in highlights:
-        if h["type"] == "news":
-            news = await db.news.find_one({"_id": h["object_id"]})
-            print(f"[LOG][ULTIMO] News collegata a highlight {h.get('title', '')}: {news}")
-    return request.app.state.templates.TemplateResponse(
+        if "_id" in h:
+            h["_id"] = str(h["_id"])
+        if "id" in h:
+            # Converti id in object_id se non esiste già
+            if "object_id" not in h:
+                h["object_id"] = str(h["id"])
+            del h["id"]  # Rimuovi il vecchio id
+        if "object_id" in h:
+            h["object_id"] = str(h["object_id"])
+    
+    # Converti gli ID dei pin in stringhe
+    if "pinned_items" in user:
+        for pin in user["pinned_items"]:
+            if "id" in pin:
+                pin["id"] = str(pin["id"])
+    
+    # Filtra per branch e tipo di assunzione
+    filtered_highlights = [
+        h for h in highlights
+        if (not h.get("branch") or user["branch"] in h["branch"]) and
+           (not h.get("employment_type") or user["employment_type"] in h["employment_type"])
+    ]
+    
+    return templates.TemplateResponse(
         "partials/home_highlights.html",
-        {"request": request, "highlights": filtered_highlights, "user": user}
+        {
+            "request": request,
+            "user": user,
+            "highlights": filtered_highlights
+        }
     )
 
 @app.get("/home/news_ticker/partial", response_class=HTMLResponse)
@@ -437,10 +381,30 @@ async def login(request: Request, db=Depends(get_db),
 
 @app.get("/logout")
 async def logout(request: Request):
+    """
+    Gestisce il logout pulendo correttamente la sessione e il cookie
+    """
+    # Log per debug
+    logger.debug("Logout - Pulisco la sessione e cancello il cookie")
+    logger.debug("Cookie prima della pulizia: %s", request.cookies.get("session"))
+    
+    # Pulisce la sessione
     request.session.clear()
-    resp = RedirectResponse("/login", 302)
-    resp.delete_cookie("session")
-    return resp
+    
+    # Crea la risposta di redirect
+    response = RedirectResponse("/login", status_code=302)
+    
+    # Cancella esplicitamente il cookie di sessione
+    response.delete_cookie(
+        "session",
+        path="/",              # Importante: stesso path usato da SessionMiddleware
+        secure=False,          # Deve corrispondere al secure= del SessionMiddleware
+        httponly=True,         # Cookie accessibile solo via HTTP
+        samesite="lax"         # Stesso valore del SessionMiddleware
+    )
+    
+    logger.debug("Logout completato - Cookie cancellato")
+    return response
 
 # ---- CAMBIO PASSWORD ----
 @app.get("/me/password", response_class=HTMLResponse)
@@ -676,6 +640,10 @@ app.include_router(news_router)
 app.include_router(links_router)
 app.include_router(documents_router)
 app.include_router(contatti_router)
+app.include_router(notifiche_router)
+app.include_router(ai_news_router)
+app.include_router(soci_router)
+app.include_router(organigramma_router)
 
 
 
@@ -923,8 +891,8 @@ async def links_page(
     print("Notifiche link segnate come lette:", result.modified_count)
 
     return templates.TemplateResponse(
-        "links.html",
-        {"request": request, "links": links, "user": user, "query": q or ""}
+        "links/links_index.html",
+        {"request": request, "links": links, "current_user": user, "query": q or ""}
     )
 
 
@@ -1096,8 +1064,6 @@ async def delete_foto(
     resp.headers["Expires"] = "0"
     return resp
     
-from app.notifiche import notifiche_router
-app.include_router(notifiche_router)
 
 
 
@@ -1143,17 +1109,12 @@ async def messaggi_page(request: Request, user=Depends(get_current_user)):
         {"request": request, "user": user}
     )
 
-from app.organigramma import organigramma_router
-app.include_router(organigramma_router)
 
-from app.ws_broadcast import websocket_notify
-app.add_api_websocket_route("/ws/notify", websocket_notify)
-
-from app.soci import soci_router
-app.include_router(soci_router)
-
-from app.ai_news import ai_news_router
-app.include_router(ai_news_router)
+async def _current_user(request: Request, db=Depends(get_db)):
+    uid = request.session.get("user_id")
+    if not uid:
+        raise HTTPException(status_code=401, detail="login richiesto")
+    return await db.users.find_one({"_id": ObjectId(uid)})
 
 @app.post("/api/me/pins")
 async def add_pin(item: dict, request: Request, user=Depends(get_current_user)):
@@ -1163,27 +1124,113 @@ async def add_pin(item: dict, request: Request, user=Depends(get_current_user)):
         raise HTTPException(status_code=400, detail="Invalid item")
     # Forza id a stringa
     item = {"type": item["type"], "id": str(item["id"])}
-    pinned = user.get("pinned_items", [])
-    if item not in pinned:
-        pinned.append(item)
-        await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinned_items": pinned}})
-        if "user" in request.session:
-            request.session["user"]["pinned_items"] = pinned
-    return JSONResponse(content={"ok": True, "pinned_items": pinned})
+    
+    # Aggiorna il documento dell'utente
+    updated_user = await db.users.find_one_and_update(
+        {"_id": user["_id"]},
+        {"$addToSet": {"pinned_items": item}},
+        return_document=True
+    )
+
+    # aggiorna la copia in sessione, così resta dopo il refresh
+    request.session["pinned_items"] = updated_user["pinned_items"]
+    
+    print("DEBUG - Session after pin:", request.session["pinned_items"])  # Debug log
+    print("DEBUG - Updated user pinned_items:", updated_user["pinned_items"])  # Debug log
+
+    # broadcast
+    await broadcast_resource_event(
+        "pin/add",
+        item_type=item["type"],
+        item_id=item["id"],
+        user_id=str(user["_id"])
+    )
+    return Response(status_code=204)
 
 @app.delete("/api/me/pins/{item_type}/{item_id}")
 async def remove_pin(item_type: str, item_id: str, request: Request, user=Depends(get_current_user)):
     db = request.app.state.db
-    pinned = user.get("pinned_items", [])
-    # Confronta sempre id come stringa
-    new_pinned = [i for i in pinned if not (i["type"] == item_type and i["id"] == str(item_id))]
-    if len(new_pinned) != len(pinned):
-        await db.users.update_one({"_id": user["_id"]}, {"$set": {"pinned_items": new_pinned}})
-        if "user" in request.session:
-            request.session["user"]["pinned_items"] = new_pinned
-    return JSONResponse(content={"ok": True, "pinned_items": new_pinned})
+    
+    # Aggiorna il documento dell'utente
+    updated_user = await db.users.find_one_and_update(
+        {"_id": user["_id"]},
+        {"$pull": {"pinned_items": {"type": item_type, "id": str(item_id)}}},
+        return_document=True
+    )
 
-@app.websocket("/ws/notify")
+    # aggiorna la copia in sessione, così resta dopo il refresh
+    request.session["pinned_items"] = updated_user["pinned_items"]
+    
+    print("DEBUG - Session after unpin:", request.session["pinned_items"])  # Debug log
+    print("DEBUG - Updated user pinned_items:", updated_user["pinned_items"])  # Debug log
+
+    # broadcast
+    await broadcast_resource_event(
+        "pin/remove",
+        item_type=item_type,
+        item_id=item_id,
+        user_id=str(user["_id"])
+    )
+    return Response(status_code=204)
+
+
+# --------------------------- DEBUG TOOLS -------------------------------
+
+def signer_debug(secret, salt):
+    """
+    Debug helper per verificare i parametri di firma
+    """
+    ser = URLSafeSerializer(secret, salt=salt)
+    signer = ser.make_signer(salt)
+    logger.debug("=== SIGNER DEBUG ===")
+    logger.debug("key_derivation: %s", signer.key_derivation)
+    logger.debug("digest_method : %s", signer.digest_method().name)
+    logger.debug("salt         : %s", signer.salt)
+    logger.debug("secret       : %s", secret)  # Mostro l'intera chiave
+
+# --------------------------- STARTUP --------------------------------
+
+@app.on_event("startup")
+async def startup():
+    """
+    Inizializzazione dell'applicazione
+    """
+    # Debug del percorso .env e della chiave di sessione
+    logger.debug("=== ENV DEBUG ===")
+    logger.debug("SESSION_SECRET = %s", os.environ.get("SESSION_SECRET"))  # Mostro l'intera chiave
+    logger.debug(".env path      = %s", Path('.env').resolve())
+    
+    # Debug dei parametri del signer
+    signer_debug(SECRET_KEY, "starlette.sessions")
+
+@app.get("/home/highlights/{type}/partial")
+async def get_type_section(type: str, request: Request, user=Depends(get_current_user)):
+    """Restituisce solo la sezione specifica per tipo"""
+    highlights = await get_all_highlights(request)
+    filtered_highlights = [h for h in highlights if h["type"] == type]
+    return templates.TemplateResponse(
+        f"partials/home_{type}.html",
+        {
+            "request": request,
+            "user": user,
+            "highlights": filtered_highlights,
+            "pinned": user.get("pinned_items", [])
+        }
+    )
+
+@app.on_event("startup")
+async def regen_secret_if_dev():
+    if os.getenv("DEV_MODE"):
+        print("DEV MODE: Regenerating secret key...")
+        os.environ["SESSION_SECRET"] = secrets.token_urlsafe(32)
+
+# Endpoint WebSocket principale
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket_notify(websocket)
+    await websocket_main(websocket)
+
+# Serve favicon.ico
+@app.get('/favicon.ico')
+async def favicon():
+    return FileResponse('static/img/Logo_HQ.png')
 

@@ -15,7 +15,6 @@ async def get_current_user(request: Request):
 
     # ─── NIENTE SESSIONE ────────────────────────────────────────────
     if not uid:
-
         if "HX-Request" in request.headers:
             # 1) HTMX capisce HX-Redirect e ricarica la pagina
             raise HTTPException(
@@ -57,7 +56,7 @@ async def require_admin(
 ):
     if user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin only")
-    return True
+    return user
 
 async def get_db(request: Request) -> AsyncIOMotorDatabase:
     """Database MongoDB"""

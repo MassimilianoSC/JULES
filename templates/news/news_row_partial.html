@@ -1,28 +1,32 @@
+{% set user = user or current_user %}
 {% macro news_row(n, user=None) %}
-<div id="news-{{ n._id }}" class="p-4 bg-blue-50 border-l-4 border-blue-400 rounded-2xl shadow-sm">
+<div id="news-{{ n._id|string }}" class="p-4 bg-blue-50 border-l-4 border-blue-400 rounded-2xl shadow-sm">
   <div class="flex flex-row justify-between">
     <div class="flex-1">
-      <h2 class="text-xl font-bold text-gray-900 mb-2">{{ n.title }}</h2>
+      <h3 class="text-xl font-bold text-gray-900 mb-2">{{ n.title }}</h3>
       <div class="prose max-w-none text-gray-800 mb-4">
         {{ n.content | safe }}
       </div>
+      <div class="text-sm text-gray-600">
+        Pubblicato il {{ n.created_at.strftime("%d/%m/%Y") if n.created_at else "?" }}
+      </div>
     </div>
     <div class="flex flex-col items-end w-1/3 pl-8 mt-4 md:mt-0">
-      <span class="text-xs text-blue-500 mb-2">Pubblicata il {{ n.created_at.strftime("%d/%m/%Y") if n.created_at else "?" }}</span>
       <div class="text-base font-bold text-slate-700 mb-1">Destinatario</div>
       <div class="text-sm text-gray-700 bg-blue-100 rounded-lg px-4 py-2">
         Filiale: {{ 'Tutte' if n.branch == '*' else n.branch or '?' }}<br>
+        {% set tipo = n.employment_type %}
         Tipologia:
-        {% if n.employment_type is string %}
+        {% if tipo is string %}
           {{ {
             "TD": "Tempo Determinato",
             "TI": "Tempo Indeterminato",
             "AP": "Apprendistato",
             "CO": "Collaborazione",
             "*": "Tutte"
-          }[n.employment_type] }}
-        {% elif n.employment_type is sequence %}
-          {% for t in n.employment_type %}
+          }[tipo] }}
+        {% elif tipo is sequence %}
+          {% for t in tipo %}
             {{ {
               "TD": "Tempo Determinato",
               "TI": "Tempo Indeterminato",
@@ -46,18 +50,102 @@
       class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
       Modifica
     </button>
-    <form
-      hx-delete="/news/{{ n._id }}"
-      hx-target="#news-{{ n._id }}"
-      hx-swap="delete"
-      style="display:inline">
-      <button type="button"
-              onclick="showDelete(this)"
-              class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+    <form hx-delete="/news/{{ n._id }}" hx-target="#news-{{ n._id }}" hx-swap="delete">
+      <button type="button" onclick="showDelete(this)"
+        class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
         Elimina
       </button>
     </form>
   </div>
   {% endif %}
 </div>
+
+<script type="module">
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('click', e => {
+    const deleteBtn = e.target.closest('[data-delete-url]');
+    
+    if (deleteBtn) {
+      e.preventDefault();
+      const url = deleteBtn.dataset.deleteUrl;
+      const newsId = deleteBtn.dataset.newsId;
+      const newsElement = document.querySelector(`#news-${newsId}`);
+      
+      Swal.fire({
+        title: 'Sei sicuro?',
+        text: 'Questa azione non può essere annullata',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+          fetch(url, {
+            method: 'DELETE',
+            headers: {
+              'HX-Request': 'true'
+            }
+          }).then(async response => {
+            if (response.ok) {
+              // Rimuoviamo l'elemento dalla UI e emettiamo l'evento
+              if (newsElement) {
+                newsElement.remove();
+                eventBus.emit('resource/delete', {
+                  type: 'news',
+                  id: newsId
+                });
+              }
+
+              // Gestiamo il trigger per la conferma admin
+              const triggerHeader = response.headers.get('HX-Trigger');
+              console.log('[DEBUG] HX-Trigger header ricevuto:', triggerHeader);
+              
+              if (triggerHeader) {
+                try {
+                  const triggerData = JSON.parse(triggerHeader);
+                  console.log('[DEBUG] Trigger data parsato:', triggerData);
+                  if (triggerData.showAdminConfirmation) {
+                    const conf = triggerData.showAdminConfirmation;
+                    console.log('[DEBUG] Configurazione conferma admin:', conf);
+                    // Mostriamo il messaggio di conferma all'admin
+                    Swal.fire({
+                      title: conf.title,
+                      text: conf.message,
+                      icon: conf.level,
+                      timer: conf.duration,
+                      showConfirmButton: false
+                    });
+                  }
+                } catch (error) {
+                  console.error('[DEBUG] Errore parsing trigger data:', error);
+                  showToast({
+                    title: 'Operazione completata',
+                    body: 'La news è stata eliminata con successo',
+                    type: 'success'
+                  });
+                }
+              }
+            } else {
+              showToast({
+                title: 'Errore',
+                body: "Si è verificato un errore durante l'eliminazione",
+                type: 'error'
+              });
+            }
+          }).catch(error => {
+            console.error('[DEBUG] Errore durante la chiamata DELETE:', error);
+            showToast({
+              title: 'Errore',
+              body: "Si è verificato un errore durante l'eliminazione",
+              type: 'error'
+            });
+          });
+        }
+      });
+    }
+  });
+</script>
 {% endmacro %}

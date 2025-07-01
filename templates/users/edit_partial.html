@@ -7,7 +7,7 @@
   <h2 class="text-lg font-semibold text-blue-700">Modifica utente</h2>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-    <!-- Campi base -->
+    <!-- Dati principali in 2 colonne -->
     <div class="grid gap-2">
       <label class="text-sm font-medium text-slate-700">Nome</label>
       <input name="name" value="{{ user.name }}" required 
@@ -20,6 +20,7 @@
              class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition"/>
     </div>
 
+    <!-- Ruolo e Filiale -->
     <div class="grid gap-2">
       <label class="text-sm font-medium text-slate-700">Ruolo</label>
       <select name="role" 
@@ -29,11 +30,8 @@
       </select>
     </div>
 
-    <!-- Filiale -->
     <div class="grid gap-2">
-      <label for="branch" class="text-sm font-medium text-slate-700">
-        Filiale
-      </label>
+      <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
       <select id="branch" name="branch" required 
               class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
         <option value="HQE"       {{ "selected" if user.branch == "HQE" }}>HQE</option>
@@ -42,55 +40,47 @@
       </select>
     </div>
 
-    <!-- Tipologia Assunzione -->
-    <div class="grid gap-2">
-      <label for="employment_type" class="text-sm font-medium text-slate-700">
-        Tipologia Assunzione
-      </label>
-      <select id="employment_type" name="employment_type" required 
-              class="w-[22ch] rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-        <option value="TD" {{ "selected" if user.employment_type == "TD" }}>Tempo Determinato</option>
-        <option value="TI" {{ "selected" if user.employment_type == "TI" }}>Tempo Indeterminato</option>
-        <option value="AP" {{ "selected" if user.employment_type == "AP" }}>Apprendistato</option>
-        <option value="CO" {{ "selected" if user.employment_type == "CO" }}>Collaborazione</option>
-      </select>
+    <!-- Campi corti in 3 colonne -->
+    <div class="md:col-span-2 grid grid-cols-3 gap-4">
+      <!-- Tipologia Assunzione -->
+      <div>
+        <label for="employment_type" class="text-sm font-medium text-slate-700">Tipologia</label>
+        <select id="employment_type" name="employment_type" required 
+                class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
+          <option value="TD" {{ "selected" if user.employment_type == "TD" }}>Tempo Determinato</option>
+          <option value="TI" {{ "selected" if user.employment_type == "TI" }}>Tempo Indeterminato</option>
+          <option value="AP" {{ "selected" if user.employment_type == "AP" }}>Apprendistato</option>
+          <option value="CO" {{ "selected" if user.employment_type == "CO" }}>Collaborazione</option>
+        </select>
+      </div>
+
+      <!-- BU -->
+      <div>
+        <label for="bu" class="text-sm font-medium text-slate-700">BU</label>
+        <input id="bu" name="bu" type="text"
+               value="{{ user.bu or '' }}"
+               class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
+      </div>
+
+      <!-- Team -->
+      <div>
+        <label for="team" class="text-sm font-medium text-slate-700">Team</label>
+        <input id="team" name="team" type="text"
+               value="{{ user.team or '' }}"
+               class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
+      </div>
     </div>
 
-    <!-- Business Unit -->
+    <!-- Dati personali in 2 colonne -->
     <div class="grid gap-2">
-      <label for="bu" class="text-sm font-medium text-slate-700">
-        BU
-      </label>
-      <input id="bu" name="bu" type="text"
-             value="{{ user.bu or '' }}"
-             class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-    </div>
-
-    <!-- Team -->
-    <div class="grid gap-2">
-      <label for="team" class="text-sm font-medium text-slate-700">
-        Team
-      </label>
-      <input id="team" name="team" type="text"
-             value="{{ user.team or '' }}"
-             class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-    </div>
-
-    <!-- Data di nascita -->
-    <div class="grid gap-2">
-      <label for="birth_date" class="text-sm font-medium text-slate-700">
-        Data di nascita
-      </label>
+      <label for="birth_date" class="text-sm font-medium text-slate-700">Data di nascita</label>
       <input id="birth_date" name="birth_date" type="date"
              value="{{ user.birth_date or '' }}"
              class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
     </div>
 
-    <!-- Sesso -->
     <div class="grid gap-2">
-      <label for="sex" class="text-sm font-medium text-slate-700">
-        Sesso
-      </label>
+      <label for="sex" class="text-sm font-medium text-slate-700">Sesso</label>
       <select id="sex" name="sex"
               class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
         <option value=""></option>
@@ -100,7 +90,7 @@
     </div>
 
     <!-- Cittadinanza -->
-    <div class="md:col-span-2 grid gap-2">
+    <div class="md:col-span-2">
       <label for="citizenship" class="text-sm font-medium text-slate-700">Cittadinanza</label>
       <select id="citizenship" name="citizenship" required
               class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">

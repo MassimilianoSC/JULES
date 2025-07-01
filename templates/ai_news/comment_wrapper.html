@@ -1,0 +1,110 @@
+{# 
+  Template wrapper per i commenti.
+  Questo template fornisce la struttura consistente per tutti i commenti,
+  sia per il rendering iniziale che per gli aggiornamenti AJAX.
+  
+  Parametri richiesti:
+  - comment: il commento da renderizzare
+  - user: l'utente corrente
+#}
+{% set comment_id = comment._id %}
+<div class="flex items-start space-x-3 p-4 bg-white rounded-lg shadow-sm" id="msg-{{ comment_id }}">
+    <!-- Avatar -->
+    <div class="flex-shrink-0">
+        <img class="h-10 w-10 rounded-full" src="{{ comment.author.avatar or '/static/img/avatar-default.png' }}" alt="{{ comment.author.name }}">
+    </div>
+    
+    <!-- Contenuto -->
+    <div class="flex-grow">
+        <!-- Header -->
+        <div class="flex items-center space-x-2">
+            <span class="font-medium text-gray-900">{{ comment.author.name }}</span>
+            <span class="text-sm text-gray-500">
+                {%- if comment.created_at is string -%}
+                    {{ comment.created_at }}
+                {%- else -%}
+                    {{ comment.created_at.strftime('%d/%m/%Y %H:%M') }}
+                {%- endif -%}
+            </span>
+        </div>
+        
+        <!-- Testo -->
+        <div class="mt-1 text-sm text-gray-700">
+            {{ comment.content }}
+        </div>
+        
+        <!-- Footer -->
+        <div class="mt-2 flex items-center space-x-4 text-sm">
+            <!-- Like button -->
+            <button 
+                class="flex items-center space-x-1 text-gray-500 hover:text-blue-600 transition-colors"
+                hx-post="/api/ai-news/{{ news_id }}/comments/{{ comment_id }}/like"
+                hx-swap="outerHTML"
+                data-liked="{{ 'true' if comment.user_has_liked else 'false' }}"
+            >
+                <svg class="w-4 h-4" fill="{{ 'currentColor' if comment.user_has_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
+                </svg>
+                <span>{{ comment.likes or 0 }}</span>
+            </button>
+            
+            <!-- Reply button -->
+            <button 
+                data-reply-btn
+                data-comment-id="{{ comment_id }}"
+                class="text-sm text-gray-500 hover:text-gray-700">
+                Rispondi
+            </button>
+            
+            <!-- Indicatore di lettura -->
+            {% if comment.read_by and user._id in comment.read_by %}
+            <span class="text-xs text-gray-400" title="Letto il {{ comment.read_at[user._id].strftime('%d/%m/%Y %H:%M') if not comment.read_at[user._id] is string else comment.read_at[user._id] }}">
+                <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+            </span>
+            {% endif %}
+        </div>
+        
+        <!-- Form per rispondere -->
+        <div id="reply-form-{{ comment_id }}" class="hidden mt-3">
+            <div class="flex items-start space-x-2">
+                <textarea 
+                    class="flex-grow p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows="1"
+                    placeholder="Scrivi una risposta..."
+                ></textarea>
+                <button onclick="sendComment('{{ news_id }}', this.previousElementSibling.value, '{{ comment_id }}')" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Invia
+                </button>
+            </div>
+        </div>
+        
+        <!-- Container per le risposte -->
+        <div id="replies-{{ comment_id }}" class="mt-3">
+            {% if comment.thread_count and comment.thread_count > 0 %}
+            <button 
+                class="text-sm text-blue-600 hover:text-blue-800"
+                hx-get="/api/ai-news/{{ news_id }}/comments/{{ comment_id }}/replies"
+                hx-target="#replies-{{ comment_id }}"
+                hx-swap="innerHTML"
+            >
+                Mostra risposte ({{ comment.thread_count }})
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleReplyForm(commentId) {
+    const form = document.getElementById(`reply-form-${commentId}`);
+    if (form) {
+        form.classList.toggle('hidden');
+        if (!form.classList.contains('hidden')) {
+            form.querySelector('textarea').focus();
+        }
+    }
+}
+</script>

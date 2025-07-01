@@ -13,38 +13,40 @@
     </div>
     
     <!--  ░░ Destinatario ░░ -->
-    <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4 sm:col-span-2">
+    <fieldset class="border border-slate-300 rounded-lg p-4 sm:col-span-2">
       <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
 
-      <!-- Filiale -->
-      <div class="grid gap-2">
-        <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
-        <select id="branch" name="branch" required 
-                class="w-full rounded-lg border border-slate-300 px-4 py-2
-                       text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-          {% for b in ["*", "HQE", "HQ ITALIA", "HQIA"] %}
-            <option value="{{ b }}" {% if d.branch == b %}selected{% endif %}>{{ "Tutte" if b == "*" else b }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Filiale -->
+        <div>
+          <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
+          <select id="branch" name="branch" required 
+                  class="w-full rounded-lg border border-slate-300 px-4 py-2
+                         text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+            {% for b in ["*", "HQE", "HQ ITALIA", "HQIA"] %}
+              <option value="{{ b }}" {% if d.branch == b %}selected{% endif %}>{{ "Tutte" if b == "*" else b }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-      <!-- Tipologia Assunzione -->
-      <div class="grid gap-2">
-        <label for="employment" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
-        <select id="employment" name="employment_type" required 
-                class="w-full rounded-lg border border-slate-300 px-4 py-2
-                       text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-          {% for et in ["*", "TD", "TI", "AP", "CO"] %}
-            <option value="{{ et }}" {% if et in d.employment_type %}selected{% endif %}>
-              {{ "Tutte" if et == "*" else {
-                "TD": "Tempo Determinato",
-                "TI": "Tempo Indeterminato",
-                "AP": "Apprendistato",
-                "CO": "Collaborazione"
-              }[et] }}
-            </option>
-          {% endfor %}
-        </select>
+        <!-- Tipologia Assunzione -->
+        <div>
+          <label for="employment" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+          <select id="employment" name="employment_type" required 
+                  class="w-full rounded-lg border border-slate-300 px-4 py-2
+                         text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+            {% for et in ["*", "TD", "TI", "AP", "CO"] %}
+              <option value="{{ et }}" {% if et in d.employment_type %}selected{% endif %}>
+                {{ "Tutte" if et == "*" else {
+                  "TD": "Tempo Determinato",
+                  "TI": "Tempo Indeterminato",
+                  "AP": "Apprendistato",
+                  "CO": "Collaborazione"
+                }[et] }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
       </div>
     </fieldset>
     
@@ -61,8 +63,9 @@
   </div>
   
   <div class="flex justify-end gap-3 pt-4">
-    <button type="button" onclick="closeModal()" 
-            class="inline-flex items-center rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+    <button type="button" 
+            data-close-modal
+            class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
       Annulla
     </button>
     <button type="submit" 

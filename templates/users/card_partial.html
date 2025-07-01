@@ -36,8 +36,8 @@
       hx-swap="delete"
       style="display:inline">
       <button type="button"
-              onclick="showDelete(this)"
-              class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+              class="js-delete-btn inline-flex items-center gap-1 rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-medium text-rose-700 shadow hover:bg-rose-200 transition"
+              data-admin-confirm>
         Elimina
       </button>
     </form>
@@ -59,4 +59,52 @@
       <img src="{{ foto_url }}" onerror="this.src='/static/img/avatar-default.png'" alt="Foto profilo" class="w-64 h-64 rounded-full object-cover border-4 border-white shadow-xl bg-white/80">
     </div>
   </div>
-</div> 
+</div>
+
+<script type="module">
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  // Gestione eliminazione con conferma e notifica
+  const deleteButtons = document.querySelectorAll('.js-delete-btn');
+  deleteButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const form = btn.closest('form');
+      
+      // Mostra conferma SweetAlert2
+      Swal.fire({
+        title: 'Sei sicuro?',
+        text: 'Questa azione non può essere annullata',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sì, elimina',
+        cancelButtonText: 'Annulla',
+        reverseButtons: true
+      }).then((result) => {
+        if (result.isConfirmed) {
+          form.requestSubmit();
+          
+          // Emetti evento per notificare gli altri utenti
+          eventBus.emit('resource/delete', {
+            type: 'user',
+            id: form.getAttribute('hx-delete').split('/')[2]
+          });
+        }
+      });
+    });
+  });
+
+  // Ascolta eventi HTMX per mostrare toast di conferma
+  document.body.addEventListener('htmx:afterRequest', (evt) => {
+    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/users/')) {
+      const trigger = evt.detail.xhr.getResponseHeader('HX-Trigger');
+      if (trigger && !trigger.includes('showAdminConfirmation')) {
+        showToast({
+          title: 'Operazione completata',
+          body: 'L\'utente è stato aggiornato con successo',
+          type: 'success'
+        });
+      }
+    }
+  });
+</script> 

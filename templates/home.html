@@ -8,6 +8,10 @@
     }
     .animate-fadein {
       animation: fadein 1s cubic-bezier(.4,0,.2,1) 0.1s both;
+      animation-play-state: paused;
+    }
+    .animate-fadein.play-animation {
+      animation-play-state: running;
     }
     /* Effetto hover più visibile per le card */
     .card-animated {
@@ -44,6 +48,24 @@
       background: #a78bfa;
       border-radius: 4px;
     }
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+    .scrollbar-hide {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+    /* Masonry 4 colonne su desktop */
+    .masonry {
+      column-count: 2;
+      column-gap: 1.5rem;
+    }
+    @media (min-width: 1024px) {
+      .masonry { column-count: 3; }
+    }
+    @media (min-width: 1536px) {
+      .masonry { column-count: 4; }
+    }
   </style>
 {% endblock %}
 
@@ -77,12 +99,60 @@
     </div>
     <!-- Sticky NEWS BAR fuori dal contenitore centrale, allungata -->
     {% include "partials/news_ticker.html" %}
-    <div class="relative z-10 w-full max-w-2xl mx-auto px-4 flex flex-col items-center">
+    <div class="relative z-10 w-full max-w-7xl mx-auto px-4">
         <!-- IN EVIDENZA RAGGRUPPATA PER TIPOLOGIA -->
         {% include "partials/home_highlights.html" %}
         <div class="pb-32"></div>
     </div>
 </div>
+
+{% if news_items %}
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Ultime News</h2>
+            
+            <!-- INIZIO: Struttura per lo Scroller Orizzontale -->
+            <div id="news-scroller-container" class="relative group">
+              
+                <!-- Contenitore Scrollabile con Tailwind CSS -->
+                <div id="news-scroller" class="flex items-stretch pb-4 space-x-6 overflow-x-auto scroll-smooth snap-x snap-mandatory scrollbar-hide">
+                    {% for news in news_items %}
+                        <!-- Card della News -->
+                        <div class="snap-start flex-shrink-0 w-96">
+                            <div class="h-full bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden flex flex-col">
+                                <div class="p-6 flex-grow">
+                                    <h3 class="font-bold text-lg mb-2 text-gray-900">{{ news.title }}</h3>
+                                    <p class="text-gray-600 text-sm leading-relaxed">{{ news.content | truncate(120, True) }}</p>
+                                </div>
+                                <div class="bg-gray-50 px-6 py-3 border-t border-gray-100 text-xs text-gray-500 flex justify-between items-center">
+                                    <span>{{ news.created_at.strftime('%d %b %Y') }}</span>
+                                    <!-- Icona per news pinnate -->
+                                    {% if news.pinned %}
+                                        <span title="Fissato in alto">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                              <path fill-rule="evenodd" d="M3.293 3.293a1 1 0 011.414 0L10 8.586l5.293-5.293a1 1 0 111.414 1.414L11.414 10l5.293 5.293a1 1 0 01-1.414 1.414L10 11.414l-5.293 5.293a1 1 0 01-1.414-1.414L8.586 10 3.293 4.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                            </svg>
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+              
+                <!-- Pulsanti di navigazione (solo desktop, appaiono su hover) -->
+                <button id="scroll-left-btn" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-md text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block hover:bg-white focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <button id="scroll-right-btn" class="absolute right-0 top-1/2 -translate-y-1/2 z-10 p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-md text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block hover:bg-white focus:outline-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+                </button>
+
+            </div>
+            <!-- FINE: Struttura Scroller -->
+        </div>
+    </div>
+{% endif %}
 
 {% endblock %}
 

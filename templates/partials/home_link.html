@@ -1,0 +1,16 @@
+{% import "components/card.html" as ui %}
+
+<div class="mb-8 link-section">
+  {% if highlights %}
+    <div class="inline-block mb-3 px-6 py-2 rounded-xl bg-green-100/80 border-2 border-green-400">
+      <h2 class="text-xl font-bold text-green-900 text-center">In evidenza: Link</h2>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {% for h in highlights %}
+        {% if h.object_id|string not in (pinned|map(attribute='id')|list) %}
+          {{ ui.render_card(h, pinned) }}
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+</div> 

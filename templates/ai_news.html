@@ -1,8 +1,16 @@
 {% extends "base.html" %}
-{% import "components/crud_base.html" as crud %}
+
+{% block head %}
+  {{ super() }}
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/ai_news_layout.css">
+  <script type="module" src="/static/js/features/ai-news/index.js"></script>
+  <script type="module" src="/static/js/features/ai-news/analytics/index.js"></script>
+  <link href="/static/css/features/ai-news/chat-styles.css" rel="stylesheet">
+{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 pb-32">  {# Spazio per navbar #}
+<div class="container mx-auto px-4 pb-32 ai-news-page">  {# Spazio per navbar #}
   <div class="flex flex-col lg:flex-row gap-8">
     
     {# Colonna principale con sezioni tematiche #}
@@ -18,10 +26,12 @@
 
       {# Sezioni tematiche #}
       {% set category_labels = {
-        'generic': 'Generica',
-        'business': 'Aziendale',
-        'technical': 'Tecnica',
-        'other': 'Altro'
+        'AI': 'Intelligenza Artificiale',
+        'ML': 'Machine Learning',
+        'DL': 'Deep Learning',
+        'NLP': 'Natural Language Processing',
+        'CV': 'Computer Vision',
+        'OTHER': 'Altro'
       } %}
       {% for key, label in category_labels.items() %}
       <div class="mb-8">
@@ -64,7 +74,7 @@
       <div class="bg-white rounded-lg shadow p-6">
         <h2 class="text-lg font-semibold mb-4">Filtri</h2>
         <div class="space-y-4">
-          <select class="w-full" id="category-filter" onchange="filterNews()">
+          <select class="w-full" id="category-filter" data-category-filter>
             <option value="">Tutte le categorie</option>
             {% for key, label in category_labels.items() %}
             <option value="{{ key }}">{{ label }}</option>
@@ -79,274 +89,14 @@
 
 {% block scripts %}
 {{ super() }}
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
-  // Funzione tempo relativo
-  function timeAgo(date) {
-    const seconds = Math.floor((new Date() - new Date(date)) / 1000);
-    const intervals = {
-      anno: 31536000,
-      mese: 2592000,
-      settimana: 604800,
-      giorno: 86400,
-      ora: 3600,
-      minuto: 60,
-      secondo: 1
-    };
-    for (let [unit, secondsInUnit] of Object.entries(intervals)) {
-      const interval = Math.floor(seconds / secondsInUnit);
-      if (interval >= 1) {
-        return `${interval} ${unit}${interval > 1 ? 'i' : ''} fa`;
-      }
-    }
-    return 'adesso';
-  }
-
-  // Aggiornamento contatore caratteri
-  function updateCharCount(textarea, newsId) {
-    if (!textarea || !newsId) return;
-    const maxLength = parseInt(textarea.getAttribute('maxlength')) || 1000;
-    const remaining = maxLength - textarea.value.length;
-    const counter = document.getElementById(`char-count-${newsId}`);
-    if (!counter) return; // Previene l'errore se il contatore non esiste
-    counter.textContent = remaining;
-    // Gestione del pulsante submit solo se il form esiste
-    const form = textarea.form;
-    if (form) {
-        const submitButton = form.querySelector('button[type="submit"]');
-        if (submitButton) {
-            submitButton.disabled = textarea.value.trim().length === 0;
-        }
-    }
-  }
-
-  // Loading states
-  function setLoading(newsId, isLoading) {
-    const loadingEl = document.querySelector(`#comments-${newsId} .comments-loading`);
-    if (loadingEl) {
-      if (isLoading) {
-        loadingEl.classList.remove('hidden');
-      } else {
-        loadingEl.classList.add('hidden');
-      }
-    }
-  }
-
-  // Toast notifications
-  function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 ${type === 'success' ? 'bg-green-500' : 'bg-blue-500'} text-white`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => {
-      toast.classList.add('opacity-0', 'translate-y-2');
-      setTimeout(() => toast.remove(), 300);
-    }, 3000);
-  }
-
-  // Carica statistiche per tutte le news
-  function loadStats(newsId) {
-    fetch(`/api/ai-news/${newsId}/stats`)
-      .then(response => response.json())
-      .then(data => {
-        const card = document.getElementById(`ai-news-${newsId}`);
-        card.querySelector('#views-' + newsId + ' .stats-count').textContent = data.stats.views;
-        card.querySelector('#comments-' + newsId + ' .stats-count').textContent = data.stats.comments;
-        const likeBtn = card.querySelector('#like-btn-' + newsId);
-        likeBtn.querySelector('.stats-count').textContent = data.stats.likes;
-        if (data.user_liked) {
-          likeBtn.classList.add('text-blue-600');
-        } else {
-          likeBtn.classList.remove('text-blue-600');
-        }
-        // Aggiorna contatore interazioni totali
-        const totalInteractions = document.getElementById('total-interactions');
-        if (totalInteractions) {
-          const current = parseInt(totalInteractions.textContent) || 0;
-          totalInteractions.textContent = current + (data.stats.total_interactions || 0);
+  document.addEventListener('DOMContentLoaded', function() {
+    fetch('/notifiche/mark-read/ai_news', {method: 'POST', credentials: 'include'})
+      .then(() => {
+        if (window.htmx) {
+          htmx.trigger(document.body, 'notifications.refresh');
         }
       });
-  }
-
-  // Carica commenti per una news
-  function loadComments(newsId) {
-    setLoading(newsId, true);
-    fetch(`/api/ai-news/${newsId}/comments`)
-      .then(response => response.json())
-      .then(data => {
-        const commentsList = document.querySelector(`#comments-${newsId} .comments-list`);
-        commentsList.innerHTML = data.items.map(comment => `
-          <div class="p-3 bg-gray-50 rounded-lg">
-            <div class="flex justify-between items-start">
-              <div>
-                <span class="font-medium">${comment.author?.name || 'Utente'}</span>
-                <p class="mt-1 text-gray-600">${comment.content}</p>
-              </div>
-              <span class="text-xs text-gray-500">${timeAgo(comment.created_at)}</span>
-            </div>
-          </div>
-        `).join('');
-        setLoading(newsId, false);
-      }).catch(() => setLoading(newsId, false));
-  }
-
-  // Toggle visualizzazione commenti
-  function toggleComments(newsId) {
-    const commentsSection = document.getElementById(`comments-${newsId}`);
-    if (commentsSection.classList.contains('hidden')) {
-      commentsSection.classList.remove('hidden');
-      loadComments(newsId);
-    } else {
-      commentsSection.classList.add('hidden');
-    }
-  }
-
-  // Aggiungi commento con feedback
-  function addComment(newsId) {
-    const form = document.getElementById(`comment-form-${newsId}`);
-    const textarea = form.querySelector('textarea[name="content"]');
-    const content = textarea.value.trim();
-    if (!content) return;
-    const submitBtn = form.querySelector('button[type="submit"]');
-    const spinner = submitBtn.querySelector('.loading-spinner');
-    submitBtn.disabled = true;
-    spinner.classList.remove('hidden');
-    fetch(`/api/ai-news/${newsId}/comments`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({content})
-    }).then(() => {
-      textarea.value = '';
-      updateCharCount(textarea, newsId);
-      loadStats(newsId);
-      loadComments(newsId);
-      showToast('Commento inviato!');
-    }).finally(() => {
-      submitBtn.disabled = false;
-      spinner.classList.add('hidden');
-    });
-  }
-
-  // Inizializzazione
-  document.addEventListener('DOMContentLoaded', function() {
-    // Carica statistiche per tutte le news
-    document.querySelectorAll('.news-card').forEach(card => {
-      const newsId = card.dataset.id;
-      if (newsId && newsId.length === 24) {
-        loadStats(newsId);
-      }
-    });
-    const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/notify');
-    ws.onmessage = function(event) {
-      const data = JSON.parse(event.data);
-      if (data.type && (data.type.startsWith('stats:ai_news:') || data.type.startsWith('comment:ai_news:'))) {
-        const newsId = data.type.split(':')[2];
-        loadStats(newsId);
-        if (!document.querySelector(`#comments-${newsId}`).classList.contains('hidden')) {
-          loadComments(newsId);
-        }
-      }
-    };
   });
-
-  // Configurazione Marked per la sicurezza (nota: sanitize deprecato, per demo)
-  if (window.marked) {
-    marked.setOptions({
-      breaks: true,
-      gfm: true
-    });
-  }
-
-  // Aggiorna preview e contatore caratteri
-  function updatePreviewAndCount(textarea, newsId) {
-    const form = textarea.closest('form');
-    const previewContent = form.querySelector('.preview-content');
-    const charCount = form.querySelector(`#char-count-${newsId}`);
-    const submitButton = form.querySelector('button[type="submit"]');
-    // Aggiorna preview
-    const markdown = textarea.value;
-    let html = '';
-    if (window.marked) {
-      html = marked.parse(markdown);
-    }
-    previewContent.innerHTML = html || '<em class="text-gray-400">Anteprima vuota</em>';
-    // Aggiorna contatore e stato bottone
-    const remainingChars = 500 - markdown.length;
-    charCount.textContent = remainingChars;
-    charCount.classList.toggle('text-red-500', remainingChars < 50);
-    submitButton.disabled = markdown.length === 0 || markdown.length > 500;
-  }
-
-  // Toggle preview/editor
-  function togglePreview(newsId) {
-    const form = document.querySelector(`#comment-form-${newsId}`);
-    const editorContainer = form.querySelector('.editor-container');
-    const previewContainer = form.querySelector('.preview-container');
-    const toggleButton = form.querySelector('.preview-toggle-text');
-    const isPreviewVisible = !previewContainer.classList.contains('hidden');
-    editorContainer.classList.toggle('hidden');
-    previewContainer.classList.toggle('hidden');
-    toggleButton.textContent = isPreviewVisible ? 'Mostra Preview' : 'Mostra Editor';
-    // Aggiorna preview se necessario
-    if (!isPreviewVisible) {
-      const textarea = form.querySelector('textarea');
-      updatePreviewAndCount(textarea, newsId);
-    }
-  }
-
-  // Gestione helper Markdown
-  document.addEventListener('click', function(e) {
-    if (e.target.matches('.markdown-helper')) {
-      const syntax = e.target.dataset.syntax;
-      const form = e.target.closest('form');
-      const textarea = form.querySelector('textarea');
-      // Inserisci la sintassi nella posizione del cursore
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      const text = textarea.value;
-      const syntaxWithoutPlaceholder = syntax.replace('testo', '');
-      const selectedText = text.substring(start, end);
-      const replacement = selectedText 
-        ? syntax.replace('testo', selectedText)
-        : syntax;
-      textarea.value = text.substring(0, start) + replacement + text.substring(end);
-      // Aggiorna preview
-      const newsId = form.id.split('-').pop();
-      updatePreviewAndCount(textarea, newsId);
-      // Posiziona il cursore
-      const newCursorPos = selectedText 
-        ? start + replacement.length
-        : start + syntaxWithoutPlaceholder.length;
-      textarea.focus();
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-    }
-  });
-
-  function filterNews() {
-    const category = document.getElementById('category-filter').value;
-    document.querySelectorAll('.news-card').forEach(card => {
-      if (!category || card.dataset.category === category) {
-        card.classList.remove('hidden');
-      } else {
-        card.classList.add('hidden');
-      }
-    });
-  }
 </script>
-{% if highlight_news_id %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const el = document.getElementById('ai-news-{{ highlight_news_id }}');
-  if (el) {
-    el.classList.add('ring', 'ring-4', 'ring-yellow-400', 'animate-pulse');
-    el.scrollIntoView({behavior: 'smooth', block: 'center'});
-    setTimeout(() => {
-      el.classList.remove('ring', 'ring-4', 'ring-yellow-400', 'animate-pulse');
-    }, 2500);
-  }
-});
-</script>
-{% endif %}
-</body>
 {% endblock %}

@@ -25,12 +25,30 @@
            placeholder-gray-500 focus:border-hq-blue focus:ring-hq-blue;
   }
 
-  /* Modale generica */
-  .modal {
-    @apply bg-white rounded-xl p-8 max-w-lg shadow-lg mx-auto;
+  /* Sistema Modale Centralizzato */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[9999];
+    display: none;
+  }
+  .modal-overlay:not(.hidden) {
+    display: flex;
+  }
+  .modal-container {
+    @apply bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-auto max-h-[90vh] overflow-y-auto relative;
+    transform: scale(0.95);
+    transition: transform .15s ease-out;
+  }
+  .modal-overlay:not(.hidden) .modal-container {
+    transform: scale(1);
+  }
+  .modal-body {
+    @apply p-8;
   }
   .modal-header {
-    @apply bg-hq-blue text-white rounded-t-xl py-3 px-6 font-heading;
+    @apply bg-hq-blue text-white rounded-t-2xl py-3 px-6 font-heading sticky top-0;
+  }
+  .modal-footer {
+    @apply flex justify-end gap-4 mt-6 sticky bottom-0 bg-white py-4;
   }
 
   .nav-link {
@@ -82,4 +100,9 @@
            hover:bg-slate-100 focus:ring-2 focus:ring-blue-600;
   }
   .label { @apply mb-1 block text-sm font-medium text-slate-700; }
+}
+
+/* Nascondi badge vuoti */
+[id^="nav-"][id$="-badge"]:empty {
+  display: none;
 }

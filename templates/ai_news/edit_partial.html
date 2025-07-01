@@ -4,72 +4,73 @@
   <form action="/ai-news/{{ d._id }}/edit" method="post"
         hx-post="/ai-news/{{ d._id }}/edit"
         hx-target="#ai-news-{{ d._id }}"
-        hx-swap="outerHTML"
+        hx-swap="none"
         class="grid gap-4">
 
-    <!-- Titolo -->
-    <div class="grid gap-2">
-      <label for="title" class="text-sm font-medium text-slate-700">Titolo</label>
-      <input id="title" name="title" type="text" required
-             value="{{ d.title }}"
-             class="w-full rounded-lg border border-slate-300 px-4 py-2
-                    text-base text-slate-800 placeholder-slate-400
-                    focus:border-blue-500 focus:ring-blue-500 transition">
+    <!-- Titolo e Categoria -->
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label for="title" class="text-sm font-medium text-slate-700">Titolo</label>
+        <input id="title" name="title" type="text" required
+               value="{{ d.title }}"
+               class="w-full rounded-lg border border-slate-300 px-4 py-2
+                      text-base text-slate-800 placeholder-slate-400
+                      focus:border-blue-500 focus:ring-blue-500 transition">
+      </div>
+
+      <div>
+        <label for="category" class="text-sm font-medium text-slate-700">Categoria</label>
+        <select id="category" name="category" required
+                class="w-full rounded-lg border border-slate-300 px-4 py-2
+                       text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+          <option value="generic" {% if d.category == 'generic' %}selected{% endif %}>Generica</option>
+          <option value="business" {% if d.category == 'business' %}selected{% endif %}>Aziendale</option>
+          <option value="technical" {% if d.category == 'technical' %}selected{% endif %}>Tecnica</option>
+          <option value="other" {% if d.category == 'other' %}selected{% endif %}>Altro</option>
+        </select>
+      </div>
     </div>
 
-    <!-- Filiale -->
-    <div class="grid gap-2">
-      <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
-      <select id="branch" name="branch"
-              class="w-full rounded-lg border border-slate-300 px-4 py-2
-                     text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-        <option value="*" {% if d.branch == '*' %}selected{% endif %}>Tutte</option>
-        {% for b in ["HQE", "HQ ITALIA", "HQIA"] %}
-          <option value="{{ b }}" {% if d.branch == b %}selected{% endif %}>{{ b }}</option>
-        {% endfor %}
-      </select>
-    </div>
+    <!-- Destinatari -->
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
+        <select id="branch" name="branch"
+                class="w-full rounded-lg border border-slate-300 px-4 py-2
+                       text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+          <option value="*" {% if d.branch == '*' %}selected{% endif %}>Tutte</option>
+          {% for b in ["HQE", "HQ ITALIA", "HQIA"] %}
+            <option value="{{ b }}" {% if d.branch == b %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-    <!-- Tipologia Assunzione -->
-    <div class="grid gap-2">
-      <label for="employment" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
-      <select id="employment" name="employment_type"
-              class="w-full rounded-lg border border-slate-300 px-4 py-2
-                     text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-        <option value="*" {% if '*' in d.employment_type %}selected{% endif %}>Tutte</option>
-        {% for t in ["TD", "TI", "AP", "CO"] %}
-          <option value="{{ t }}" {% if t in d.employment_type %}selected{% endif %}>{{ {
-            "TD":"Tempo Determinato",
-            "TI":"Tempo Indeterminato",
-            "AP":"Apprendistato",
-            "CO":"Collaborazione"
-          }[t] }}</option>
-        {% endfor %}
-      </select>
+      <div>
+        <label for="employment" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
+        <select id="employment" name="employment_type"
+                class="w-full rounded-lg border border-slate-300 px-4 py-2
+                       text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
+          <option value="*" {% if '*' in d.employment_type %}selected{% endif %}>Tutte</option>
+          {% for t in ["TD", "TI", "AP", "CO"] %}
+            <option value="{{ t }}" {% if t in d.employment_type %}selected{% endif %}>{{ {
+              "TD":"Tempo Determinato",
+              "TI":"Tempo Indeterminato",
+              "AP":"Apprendistato",
+              "CO":"Collaborazione"
+            }[t] }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
 
     <!-- Tag -->
-    <div class="grid gap-2">
+    <div>
       <label for="tags" class="text-sm font-medium text-slate-700">Tag (virgola separati)</label>
       <input id="tags" name="tags" type="text"
              value="{{ ','.join(d.tags) if d.get('tags') else '' }}"
              class="w-full rounded-lg border border-slate-300 px-4 py-2
                     text-base text-slate-800 placeholder-slate-400
                     focus:border-blue-500 focus:ring-blue-500 transition">
-    </div>
-
-    <!-- Categoria -->
-    <div class="grid gap-2">
-      <label for="category" class="text-sm font-medium text-slate-700">Categoria</label>
-      <select id="category" name="category" required
-              class="w-full rounded-lg border border-slate-300 px-4 py-2
-                     text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-        <option value="generic" {% if d.category == 'generic' %}selected{% endif %}>Generica</option>
-        <option value="business" {% if d.category == 'business' %}selected{% endif %}>Aziendale</option>
-        <option value="technical" {% if d.category == 'technical' %}selected{% endif %}>Tecnica</option>
-        <option value="other" {% if d.category == 'other' %}selected{% endif %}>Altro</option>
-      </select>
-      <span class="text-xs text-slate-500">Seleziona la categoria più appropriata per questa news.</span>
     </div>
 
     <!-- Evidenza -->
@@ -82,10 +83,9 @@
 
     <!-- Azioni -->
     <div class="flex gap-4 justify-end pt-4">
-      <button type="button"
-              onclick="closeModal()"
-              class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-4 py-2
-                     text-sm font-medium text-slate-600 shadow hover:bg-slate-200 transition">
+      <button type="button" 
+              data-close-modal
+              class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
         Annulla
       </button>
       <button type="submit"

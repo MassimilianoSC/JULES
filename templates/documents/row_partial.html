@@ -39,10 +39,14 @@
   </div>
   <div class="flex gap-2 mt-2 md:mt-0">
     <a href="/documents/{{ d._id }}/preview" target="_blank" 
+       data-ai-preview
+       data-ai-news-id="{{ d._id }}"
        class="inline-block px-4 py-2 bg-blue-700 text-white rounded-lg shadow hover:bg-blue-900 transition">
       Anteprima
     </a>
     <a href="/documents/{{ d._id }}"
+       data-ai-download
+       data-ai-news-id="{{ d._id }}"
        class="inline-block px-4 py-2 bg-gray-200 text-blue-900 rounded-lg shadow hover:bg-gray-300 transition">
       Scarica
     </a>
@@ -54,17 +58,47 @@
         class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
         Modifica
       </button>
-      <form
-        hx-delete="/documents/{{ d._id }}"
-        hx-target="#document-{{ d._id }}"
-        hx-swap="delete"
-        style="display:inline">
-        <button type="button"
-                onclick="showDelete(this)"
-                class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      <form class="inline-block" hx-delete="/documents/{{ d._id }}" hx-swap="outerHTML" hx-target="#document-{{ d._id }}">
+        <button type="button" onclick="showDelete(this)"
+          class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
           Elimina
         </button>
       </form>
     {% endif %}
   </div>
 </div>
+
+<script type="module">
+  import { trackView } from '/static/js/features/ai-news/analytics/views.js';
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('click', e => {
+    const previewLink = e.target.closest('[data-ai-preview]');
+    const downloadLink = e.target.closest('[data-ai-download]');
+    
+    if (previewLink) {
+      const newsId = previewLink.getAttribute('data-ai-news-id');
+      trackView(newsId, 'preview');
+    }
+    
+    if (downloadLink) {
+      const newsId = downloadLink.getAttribute('data-ai-news-id');
+      trackView(newsId, 'download');
+    }
+  });
+
+  // Ascolta eventi HTMX per mostrare toast di conferma
+  document.body.addEventListener('htmx:afterRequest', (evt) => {
+    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/documents/')) {
+      // Non mostriamo il toast qui perché verrà gestito dal trigger showAdminConfirmation
+      const docId = evt.detail.pathInfo.requestPath.split('/').pop();
+      if (evt.detail.requestConfig.method === 'DELETE') {
+        eventBus.emit('resource/delete', {
+          type: 'document',
+          id: docId
+        });
+      }
+    }
+  });
+</script>

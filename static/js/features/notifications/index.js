@@ -1,4 +1,7 @@
 import { initToasts } from "./toast.js";
+import "./badge.js";        // importa per side-effect
+import "./websocket.js";    // importa per side-effect
+import "./confirmations.js";
 
 /**
  * Entry-point notifiche.
@@ -10,4 +13,6 @@ export function initNotifications() {
 }
 
 // esegui subito: il layout importerà solo questo file
-initNotifications(); 
+initNotifications();
+
+console.log("[Notifications] Modulo principale inizializzato."); 

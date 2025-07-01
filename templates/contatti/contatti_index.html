@@ -24,6 +24,8 @@
 {% endblock content %}
 
 {% block scripts %}
+{{ super() }}
+<!-- Script per le notifiche -->
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     console.log("DEBUG: DOMContentLoaded su /contatti");
@@ -36,7 +38,43 @@
         if (contattiBadgeContainer) {
           htmx.trigger(contattiBadgeContainer, 'refreshContattiBadgeEvent');
         }
+        htmx.trigger(document.body, 'notifications.refresh');
       });
+  });
+</script>
+
+<!-- Nuovo script per gestione contatti -->
+<script type="module">
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+
+  // Ascolta eventi HTMX per mostrare toast di conferma
+  document.body.addEventListener('htmx:afterRequest', (evt) => {
+    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/contatti/')) {
+      const triggerData = evt.detail.xhr.getResponseHeader('HX-Trigger');
+      if (triggerData) {
+        try {
+          const triggers = JSON.parse(triggerData);
+          if (triggers.showAdminConfirmation) {
+            const conf = triggers.showAdminConfirmation;
+            Swal.fire({
+              title: conf.title,
+              text: conf.message,
+              icon: conf.level,
+              timer: conf.duration,
+              showConfirmButton: false
+            });
+          }
+        } catch (e) {
+          console.error('Errore parsing trigger:', e);
+          showToast({
+            title: 'Operazione completata',
+            body: 'Il contatto è stato aggiornato con successo',
+            type: 'success'
+          });
+        }
+      }
+    }
   });
 </script>
 {% endblock %}

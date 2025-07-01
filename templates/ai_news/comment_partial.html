@@ -1,63 +1,35 @@
-<div id="comment-{{ comment._id }}" class="bg-white rounded-lg shadow p-4 {% if comment.parent_id %}ml-8{% endif %} {% if comment.parent_id %}comment-reply{% endif %}">
-  <div class="flex items-start gap-3 mb-2">
-    <img src="{{ comment.author.avatar or '/static/img/avatar-default.png' }}" alt="Avatar" class="comment-avatar">
-    <div class="flex-1">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="comment-author">{{ comment.author.name }}</span>
-        {% if comment.author.role == 'admin' %}
-          <span class="badge-admin">Admin</span>
-        {% endif %}
-      </div>
-      <div class="comment-content relative">
-        {% set content = comment.content %}
-        {% if comment.mentions %}
-          {% for mention_id in comment.mentions %}
-            {% set mention_name = None %}
-            {% for u in users if u.id == mention_id %}
-              {% set mention_name = u.name %}
-            {% endfor %}
-            {% if mention_name %}
-              {% set is_mentioned = user and (mention_id == user._id|string) %}
-              {% set is_author = user and (comment.author_id == user._id|string) %}
-              {% set mention_class = 'mention' %}
-              {% if is_mentioned or is_author %}
-                {% set mention_class = mention_class + ' mention-highlight pulse-once' %}
-              {% endif %}
-              {% set mention_text = '@[' ~ mention_name ~ '](' ~ mention_id ~ ')' %}
-              {% set mention_html = '<a href="#" class="' ~ mention_class ~ '" data-user-id="' ~ mention_id ~ '" data-username="' ~ mention_name ~ '">@' ~ mention_name ~ '</a>' %}
-              {% set content = content.replace(mention_text, mention_html) %}
-            {% endif %}
-          {% endfor %}
-        {% endif %}
-        {{ content | markdown | safe }}
-      </div>
-      <div class="comment-actions">
-        <button class="like-button{% if comment.liked_by_me %} liked{% endif %}" onclick="toggleCommentLike('{{ comment._id }}')" data-comment-id="{{ comment._id }}">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22">
-            <path d="M12 21C12 21 4 13.36 4 8.5C4 5.42 6.42 3 9.5 3C11.24 3 12.91 3.81 14 5.08C15.09 3.81 16.76 3 18.5 3C21.58 3 24 5.42 24 8.5C24 13.36 16 21 16 21H12Z"/>
-          </svg>
-          <span class="stats-count">{{ comment.likes }}</span>
-        </button>
-        <button onclick="showReplyForm('{{ comment._id }}', '{{ comment.news_id }}')" 
-                class="flex items-center space-x-1 text-gray-500 hover:text-blue-600"
-                aria-label="Rispondi al commento">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-          </svg>
-          <span>Rispondi</span>
-        </button>
-        {% if user and (user.role == 'admin' or user._id == comment.author._id) %}
-        <button onclick="deleteComment('{{ comment._id }}')" 
-                class="flex items-center space-x-1 text-gray-500 hover:text-red-600"
-                aria-label="Elimina commento">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-          </svg>
-          <span>Elimina</span>
-        </button>
-        {% endif %}
-      </div>
+<div class="comment flex items-start space-x-3 p-4" id="comment-{{ comment._id }}">
+    <div class="flex-shrink-0">
+        <img src="/static/img/avatar-default.png" alt="Avatar" class="h-10 w-10 rounded-full">
     </div>
-  </div>
-  <div id="reply-form-container-{{ comment._id }}"></div>
+    <div class="flex-1">
+        <div class="flex items-center justify-between">
+            <div class="text-sm font-medium text-gray-900">{{ comment.user_name }}</div>
+            <div class="text-xs text-gray-500">{{ comment.created_at | format_datetime }}</div>
+        </div>
+        <div class="mt-1 prose prose-sm max-w-none text-gray-800">
+            {{ comment.content | markdown | safe }}
+        </div>
+        
+        <!-- Reactions -->
+        <div class="mt-2 flex items-center space-x-2">
+            <button class="reaction-button text-gray-500 hover:text-gray-700"
+                    data-comment-id="{{ comment._id }}"
+                    data-reaction="like">
+                <span class="reaction-count">{{ comment.reactions.get('like', 0) }}</span>
+                <i class="fas fa-thumbs-up"></i>
+            </button>
+        </div>
+
+        <!-- Reply button -->
+        <button class="reply-button mt-2 text-sm text-gray-500 hover:text-gray-700"
+                data-comment-id="{{ comment._id }}">
+            Rispondi
+        </button>
+
+        <!-- Replies container -->
+        <div class="replies-container mt-4 space-y-4 pl-4 border-l-2 border-gray-200">
+            <!-- Replies will be loaded here -->
+        </div>
+    </div>
 </div> 

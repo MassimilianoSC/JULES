@@ -1,101 +1,145 @@
 <h2 class="text-xl font-semibold text-slate-900 mb-6">Modifica contatto</h2>
 
-<form hx-post="/contatti/{{ c._id }}/edit"
-      hx-target="#contact-{{ c._id }}"
-      hx-swap="outerHTML"
-      class="grid gap-6">
-  <!-- Nome -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">Nome</label>
-    <input name="name" type="text" value="{{ c.name }}"
-           class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" required>
-  </div>
-  <!-- Filiale lavorativa -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">Filiale</label>
-    <select name="work_branch" required
-            class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
-      <option value="">Seleziona filiale</option>
-      {% for b in branches %}
-        <option value="{{ b }}" {% if c.work_branch == b %}selected{% endif %}>{{ b }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <!-- Email -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">Email</label>
-    <input name="email" type="email" value="{{ c.email }}"
-           class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" required>
-  </div>
-  <!-- Telefono -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">Telefono</label>
-    <input name="phone" type="tel" value="{{ c.phone }}"
-           class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+<div class="modal-header">
+  <h3 class="text-lg font-semibold">Modifica Contatto</h3>
+</div>
+
+<form hx-put="/contatti/{{ c._id }}"
+      class="space-y-4 mt-4">
+
+  <div>
+    <label for="nome" class="label">Nome</label>
+    <input type="text"
+           name="name"
+           id="nome"
+           value="{{ c.name }}"
+           class="input"
+           required>
   </div>
 
-  <!-- BU -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">BU</label>
-    <input name="bu" type="text" value="{{ c.bu }}"
-           class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500">
+  <div>
+    <label for="cognome" class="label">Cognome</label>
+    <input type="text"
+           name="cognome"
+           id="cognome"
+           value="{{ c.cognome }}"
+           class="input"
+           required>
   </div>
 
-  <!-- Team -->
-  <div class="grid gap-2">
-    <label class="text-sm font-medium text-slate-700">Team</label>
-    <input name="team" type="text" value="{{ c.team }}"
-           class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500">
+  <div>
+    <label for="email" class="label">Email</label>
+    <input type="email"
+           name="email"
+           id="email"
+           value="{{ c.email }}"
+           class="input"
+           required>
   </div>
 
-  <!-- ░░ Destinatario ░░ -->
-  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
-    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+  <!-- Campi corti in una griglia a 3 colonne -->
+  <div class="grid grid-cols-3 gap-4">
+    <div>
+      <label for="telefono" class="label">Telefono</label>
+      <input type="tel"
+             name="phone"
+             id="telefono"
+             value="{{ c.phone }}"
+             class="input w-full">
+    </div>
 
-    <!-- Filiale -->
-    <div class="grid gap-2">
-      <label class="text-sm font-medium text-slate-700">Filiale</label>
-      <select name="branch" required
-              class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
-        <option value="*">Tutte</option>
+    <div>
+      <label for="bu" class="label">BU</label>
+      <input type="text"
+             name="bu"
+             id="bu"
+             value="{{ c.bu }}"
+             class="input w-full"
+             placeholder="Inserisci il BU">
+    </div>
+
+    <div>
+      <label for="team" class="label">Team</label>
+      <input type="text"
+             name="team"
+             id="team"
+             value="{{ c.team }}"
+             class="input w-full"
+             placeholder="Inserisci il team">
+    </div>
+  </div>
+
+  <!-- Filiali in una griglia a 2 colonne -->
+  <div class="grid grid-cols-2 gap-4">
+    <div>
+      <label for="filiale" class="label">Filiale</label>
+      <select name="work_branch"
+              id="filiale"
+              class="input w-full"
+              required>
+        <option value="">Seleziona filiale</option>
         {% for b in branches %}
-          {% if b != "*" %}
-            <option value="{{ b }}" {% if b == c.branch %}selected{% endif %}>{{ b }}</option>
-          {% endif %}
+          <option value="{{ b }}" {% if c.work_branch == b %}selected{% endif %}>{{ b }}</option>
         {% endfor %}
       </select>
     </div>
 
-    <!-- Tipologia assunzione -->
-    <div class="grid gap-2">
-      <label class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
-      <select name="employment_type"
-              class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500">
-        {% for t in hire_types %}
-          <option value="{{ t.id }}" {% if t.id in c.employment_type %}selected{% endif %}>{{ t.label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-  </fieldset>
+    <!-- Sezione Destinatario -->
+    <fieldset class="border border-slate-300 rounded-lg p-4">
+      <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+      
+      <div class="space-y-4">
+        <div>
+          <label for="destinatario" class="label">Filiale</label>
+          <select name="branch"
+                  id="destinatario"
+                  class="input w-full"
+                  required>
+            <option value="*">Tutte</option>
+            {% for b in branches %}
+              {% if b != "*" %}
+                <option value="{{ b }}" {% if b == c.branch %}selected{% endif %}>{{ b }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label for="tipologia" class="label">Tipologia assunzione</label>
+          <select name="employment_type"
+                  id="tipologia"
+                  class="input w-full"
+                  required>
+            {% for t in hire_types %}
+              <option value="{{ t.id }}" {% if t.id in c.employment_type %}selected{% endif %}>{{ t.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </fieldset>
+  </div>
 
   <!-- Evidenza in home -->
-  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
-    <input type="checkbox" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+  <div class="flex items-center gap-2">
+    <input type="checkbox"
+           name="show_on_home"
+           id="evidenza"
+           class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
            {% if show_on_home %}checked{% endif %}>
-    Metti in evidenza sulla home
-  </label>
+    <label for="evidenza" class="text-sm text-slate-700">
+      Metti in evidenza sulla home
+    </label>
+  </div>
 
-  <div class="flex gap-4 justify-center pt-4">
-    <button type="button"
-            onclick="document.getElementById('modal-overlay').classList.add('hidden')"
-            class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
-                   text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+  <div class="modal-footer">
+    <button type="button" 
+            data-close-modal
+            class="btn-secondary">
       Annulla
     </button>
-    <button type="submit"
-            class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
-                   text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+    <button type="submit" class="btn-primary">
       Salva
     </button>
   </div>
+
 </form>

@@ -1,10 +1,12 @@
-<div id="nav-documents-badge-container"
-     hx-get="/notifiche/count/documento"
-     hx-trigger="refreshDocumentiBadgeEvent from:body"
-     hx-swap="outerHTML">
-    {% if new_docs_count is defined and new_docs_count > 0 %}
-        <span class="absolute -top-1 right-2 bg-red-500 text-white text-xs rounded-full px-2 py-0.5 font-bold shadow">
-            {{ new_docs_count }}
-        </span>
-    {% endif %}
+<div id="nav-documenti-badge-container">
+  {% if new_docs_count %}
+  <span id="nav-documenti-badge"
+        hx-get="/notifiche/count/documento"
+        hx-trigger="notifications.refresh from:body"
+        hx-credentials="include"
+        hx-swap="innerHTML"
+        class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+    {{ new_docs_count }}
+  </span>
+  {% endif %}
 </div> 

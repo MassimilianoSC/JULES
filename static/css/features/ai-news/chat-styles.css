@@ -1,0 +1,71 @@
+/* chat-styles.css – AI‑News Chat
+   ╰─ solo le regole NON coperte dalle utility Tailwind
+*/
+
+/* ● Bolle  ---------------------------------------------------------- */
+.chat-message           { @apply rounded-lg px-3 py-2 flex gap-2 max-w-[80%]; }
+.chat-message.self-end  { @apply ml-auto bg-emerald-100 dark:bg-emerald-200/20; }
+.chat-message.other     { @apply mr-auto bg-white shadow-sm dark:bg-slate-800; }
+
+/* ● Avatar & metadati ----------------------------------------------- */
+.chat-avatar            { @apply w-8 h-8 rounded-full shrink-0; }
+.chat-meta              { @apply text-[11px] leading-none text-slate-500 mt-0.5; }
+
+/* ● Menzioni --------------------------------------------------------- */
+.mention                { @apply text-blue-600 font-medium hover:underline; }
+.mention-highlight      { @apply bg-yellow-200 dark:bg-yellow-600/40 rounded px-0.5; }
+
+/* ● Typing indicator ------------------------------------------------- */
+.typing-indicator       { @apply text-xs italic text-slate-400 pl-10; }
+
+/* ● Dark‑mode extra -------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  .chat-message.other   { @apply border border-slate-700; }
+  .chat-meta            { @apply text-slate-400; }
+}
+
+.chat-message {
+  margin-bottom: 1rem;
+  max-width: 100%;
+}
+
+.chat-message.self {
+  align-self: flex-end;
+}
+
+.chat-message.other {
+  align-self: flex-start;
+}
+
+/* Stili per le bolle dei messaggi */
+.chat-message[data-me="true"] {
+  align-self: flex-end;
+}
+
+.chat-message[data-me="true"] .message-bubble {
+  background-color: #dcfce7; /* bg-emerald-100 */
+  border-radius: 0.75rem 0 0.75rem 0.75rem;
+}
+
+.chat-message[data-me="false"] .message-bubble {
+  background-color: #f3f4f6; /* bg-gray-100 */
+  border-radius: 0 0.75rem 0.75rem 0.75rem;
+}
+
+/* Animazioni */
+.chat-message {
+  opacity: 0;
+  transform: translateY(20px);
+  animation: slideIn 0.3s ease forwards;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+} 

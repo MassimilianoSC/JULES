@@ -9,7 +9,6 @@
             {% if current_user.role == 'admin' %}
             <button hx-get="/news/new"
                     hx-target="#modal-content"
-                    onclick="openModal()"
                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -43,7 +42,6 @@
             {% if current_user.role == 'admin' %}
             <button hx-get="/contatti/new"
                     hx-target="#modal-content"
-                    onclick="openModal()"
                     class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 <svg class="h-5 w-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
@@ -75,15 +73,14 @@
 </div>
 
 <!-- Modal Container -->
-<div id="modal" class="fixed inset-0 bg-gray-500 bg-opacity-75 hidden" onclick="closeModal()">
-    <div class="fixed inset-0 z-10 overflow-y-auto">
-        <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
-            <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6"
-                 onclick="event.stopPropagation()">
-                <div id="modal-content"></div>
-            </div>
-        </div>
+<div id="modal" 
+     class="fixed inset-0 bg-gray-500 bg-opacity-75 hidden modal" 
+     data-modal>
+  <div class="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
+    <div class="relative transform overflow-hidden rounded-lg bg-white px-4 pb-4 pt-5 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:p-6"
+         id="modal-body">
     </div>
+  </div>
 </div>
 
 <script>

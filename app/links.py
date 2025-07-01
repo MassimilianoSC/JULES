@@ -1,88 +1,98 @@
-from fastapi import APIRouter, Request, Form, Depends, HTTPException
-from fastapi.responses import RedirectResponse, HTMLResponse, PlainTextResponse
+from fastapi import APIRouter, Request, Form, Depends, HTTPException, Response
+from fastapi.responses import RedirectResponse, HTMLResponse
 from app.deps import require_admin, get_current_user
-from app.utils.save_with_notifica import save_and_notify
-from app.models.links_model import LinkIn, LinkOut
 from bson import ObjectId
 from datetime import datetime
-from app.notifiche import crea_notifica
-from app.ws_broadcast import broadcast_message
-import asyncio
+import json
 
-links_router = APIRouter(tags=["links"])
+from app.utils.notification_helpers import create_action_notification_payload, create_admin_confirmation_trigger
+from app.ws_broadcast import broadcast_message, broadcast_resource_event
 
-@links_router.post(
-    "/links/new",
-    status_code=303,
-    response_class=RedirectResponse,
-    dependencies=[Depends(require_admin)]
-)
+# Aggiunto il prefisso "/links" per allineare le rotte con il frontend
+links_router = APIRouter(prefix="/links", tags=["links"])
+
+@links_router.post("/new", dependencies=[Depends(require_admin)])
 async def create_link(
-    request: Request,
-    title: str = Form(...),
-    url: str = Form(...),
-    description: str = Form(None),
-    branch: str = Form(...),
-    employment_type: str = Form("*"),
-    show_on_home: str = Form(None)
+    request: Request, 
+    title: str = Form(...), 
+    url: str = Form(...), 
+    branch: str = Form("*"), 
+    employment_type: list[str] = Form(["*"]), 
+    show_on_home: bool = Form(False), 
+    current_user: dict = Depends(get_current_user)
 ):
-    employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
-    result = await save_and_notify(
-        request=request,
-        collection="links",
-        payload={
-            "title": title.strip(),
-            "url": url.strip(),
-            "description": description.strip() if description else None,
-            "branch": branch.strip(),
-            "employment_type": employment_type_list,
-            "show_on_home": bool(show_on_home)
-        },
-        tipo="link",
-        titolo=title.strip(),
-        branch=branch.strip()
-    )
-    # Recupera l'id del link appena creato
     db = request.app.state.db
-    link = await db.links.find_one({"title": title.strip(), "url": url.strip()})
-    if show_on_home:
-        await db.home_highlights.update_one(
-            {"type": "link", "object_id": link["_id"]},
-            {"$set": {
-                "type": "link",
-                "object_id": link["_id"],
-                "title": title.strip(),
-                "created_at": datetime.utcnow(),
-                "branch": branch.strip(),
-                "employment_type": employment_type_list
-            }},
-            upsert=True
-        )
-    else:
-        await db.home_highlights.delete_one({"type": "link", "object_id": link["_id"]})
-    # Notifica via WebSocket
-    try:
-        import json
-        notifica = await db.notifiche.find_one({"id_risorsa": str(link["_id"]), "tipo": "link"})
-        payload = {
-            "type": "new_notification",
-            "data": {
-                "id": str(notifica["_id"]),
-                "message": f"È stato pubblicato un nuovo link: {notifica.get('titolo', '')}",
-                "tipo": "link"
-            }
-        }
-        await broadcast_message(json.dumps(payload))
-    except Exception as e:
-        print("[WebSocket] Errore broadcast:", e)
-    # Dopo la creazione del link
-    print(f"[DEBUG] Link creato: title={title.strip()}, branch={branch.strip()}, employment_type={employment_type_list}")
-    # Dopo la creazione della notifica (dopo save_and_notify)
-    notifica = await db.notifiche.find_one({"id_risorsa": str(link["_id"]), "tipo": "link"})
-    print(f"[DEBUG] Notifica creata: {notifica}")
-    return RedirectResponse("/links", status_code=303)
+    
+    # Crea il link nel DB
+    link_data = {
+        "title": title.strip(),
+        "url": url.strip(),
+        "branch": branch.strip(),
+        "employment_type": employment_type,
+        "show_on_home": show_on_home,
+        "created_at": datetime.utcnow()
+    }
+    result = await db.links.insert_one(link_data)
+    new_id = str(result.inserted_id)
 
-@links_router.get("/links", response_class=HTMLResponse)
+    # 1. Notifica WebSocket SOLO ai destinatari
+    payload = create_action_notification_payload(
+        'create',
+        'link',
+        title.strip(),
+        str(current_user["_id"])
+    )
+    await broadcast_message(
+        payload, 
+        branch=branch, 
+        employment_type=employment_type,  # Passa la lista direttamente
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Broadcast dell'evento per aggiornare UI
+    await broadcast_resource_event(
+        event="add",
+        item_type="link",
+        item_id=new_id,
+        user_id=str(current_user["_id"]),
+    )
+
+    # 3. Aggiornamento highlights (se necessario)
+    if show_on_home:
+        await db.home_highlights.insert_one({
+            "type": "link",
+            "object_id": new_id,
+            "title": title,
+            "url": url,
+            "branch": branch,
+            "employment_type": employment_type,
+            "created_at": datetime.utcnow()
+        })
+        # Aggiorna highlights home
+        try:
+            print(f"[DEBUG] Aggiornamento highlights")
+            payload_highlight = {
+                "type": "refresh_home_highlights"
+            }
+            await broadcast_message(payload_highlight)
+            print(f"[DEBUG] Highlights aggiornati")
+        except Exception as e:
+            print("[WebSocket] Errore broadcast su refresh highlights:", e)
+
+    # 4. Risposta di conferma per l'admin con redirect ritardato
+    print(f"[DEBUG] Preparazione risposta")
+    resp = Response(status_code=200)
+    # Prima mostra la conferma
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title)
+    # Poi chiudi la modale e fai il redirect
+    resp.headers["HX-Trigger-After-Settle"] = json.dumps({
+        "closeModal": "true",
+        "redirect-to-links": "/links"
+    })
+    print(f"[DEBUG] Headers risposta: {dict(resp.headers)}")
+    return resp
+
+@links_router.get("/", response_class=HTMLResponse)
 async def list_links(request: Request, current_user=Depends(get_current_user)):
     db = request.app.state.db
     employment_type = current_user.get("employment_type")
@@ -163,7 +173,7 @@ async def list_links(request: Request, current_user=Depends(get_current_user)):
     return response
 
 @links_router.get(
-    "/links/{link_id}/edit",
+    "/{link_id}/edit",
     response_class=HTMLResponse,
     dependencies=[Depends(require_admin)]
 )
@@ -194,98 +204,152 @@ async def edit_link_form(
         }
     )
 
-@links_router.delete("/links/{link_id}", status_code=200, dependencies=[Depends(require_admin)])
-async def delete_link(request: Request, link_id: str, user=Depends(get_current_user)):
+@links_router.delete("/{link_id}", dependencies=[Depends(require_admin)])
+async def delete_link(request: Request, link_id: str, current_user: dict = Depends(get_current_user)):
     db = request.app.state.db
-    await db.links.delete_one({"_id": ObjectId(link_id)})
-    await db.home_highlights.delete_one({"type": "link", "object_id": ObjectId(link_id)})
-    # Broadcast WebSocket per aggiornamento real-time
+    
+    # Verifica che l'ID sia valido e che il link esista prima di procedere.
     try:
-        import json
-        # Recupera info link eliminato
-        link = await db.links.find_one({"_id": ObjectId(link_id)})
-        payload = {
-            "type": "remove_link",
-            "data": {
-                "id": link_id,
-                "title": link["title"] if link else None,
-                "branch": link["branch"] if link else None
-            }
-        }
-        await broadcast_message(json.dumps(payload))
-    except Exception as e:
-        print("[WebSocket] Errore broadcast su delete_link:", e)
-    return PlainTextResponse("")
+        object_id_to_delete = ObjectId(link_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="ID del link non valido.")
+        
+    link_to_delete = await db.links.find_one({"_id": object_id_to_delete})
+    if not link_to_delete:
+        # Se il link non viene trovato nel DB, si solleva un 404.
+        # Questo è il comportamento corretto.
+        raise HTTPException(status_code=404, detail="Link non trovato.")
+    
+    title = link_to_delete.get('title', 'Link sconosciuto')
+    branch = link_to_delete.get('branch', '*')
+    employment_type = link_to_delete.get('employment_type', ['*'])
 
-@links_router.post("/links/{link_id}/edit", dependencies=[Depends(require_admin)])
-async def edit_link(request: Request, link_id: str, user=Depends(get_current_user)):
-    form_data = await request.form()
-    db = request.app.state.db
-    employment_type = form_data.get("employment_type")
-    employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
-    await db.links.update_one(
-        {"_id": ObjectId(link_id)},
-        {"$set": {
-            "title": form_data.get("title"),
-            "url": form_data.get("url"),
-            "description": form_data.get("description"),
-            "branch": form_data.get("branch"),
-            "employment_type": employment_type_list,
-            "show_on_home": "show_on_home" in form_data
-        }}
+    # Esegui l'eliminazione
+    await db.links.delete_one({"_id": object_id_to_delete})
+    
+    # 1. Notifica WebSocket SOLO ai destinatari
+    payload = create_action_notification_payload(
+        'delete',
+        'link',
+        title,
+        str(current_user["_id"])
     )
-    # Gestione home_highlights
-    if "show_on_home" in form_data:
-        await db.home_highlights.update_one(
-            {"type": "link", "object_id": ObjectId(link_id)},
-            {"$set": {
-                "type": "link",
-                "object_id": ObjectId(link_id),
-                "title": form_data.get("title"),
-                "created_at": datetime.utcnow(),
-                "branch": form_data.get("branch"),
-                "employment_type": employment_type_list
-            }},
-            upsert=True
-        )
-    else:
-        await db.home_highlights.delete_one({"type": "link", "object_id": ObjectId(link_id)})
-    # Elimino tutte le vecchie notifiche relative a questo link
-    delete_result = await db.notifiche.delete_many({"id_risorsa": str(link_id), "tipo": "link"})
-    print(f"[DEBUG] Notifiche cancellate per link {link_id}: {delete_result.deleted_count}")
-    # Dopo l'update, crea una nuova notifica per i nuovi destinatari
-    await crea_notifica(
-        request=request,
-        tipo="link",
-        titolo=form_data.get("title"),
-        branch=form_data.get("branch"),
-        id_risorsa=str(link_id),
-        employment_type=employment_type_list
+    await broadcast_message(
+        payload, 
+        branch=branch, 
+        employment_type=employment_type,  # Passa la lista direttamente
+        exclude_user_id=str(current_user["_id"])
     )
-    updated = await db.links.find_one({"_id": ObjectId(link_id)})
-    resp = request.app.state.templates.TemplateResponse(
-        "links/link_row_partial.html",
-        {"request": request, "l": updated, "user": user}
+
+    # 2. Aggiornamento highlights
+    await db.home_highlights.delete_one({"object_id": link_id})
+    await broadcast_resource_event(
+        event="delete",
+        item_type="link",
+        item_id=link_id,
+        user_id=str(current_user["_id"])
     )
-    resp.headers["HX-Trigger"] = "closeModal"
-    # Broadcast WebSocket per aggiornamento real-time dopo modifica
-    try:
-        import json
-        payload = {
-            "type": "update_link",
-            "data": {
-                "id": link_id,
-                "title": form_data.get("title"),
-                "branch": form_data.get("branch"),
-                "consequence": "Il link è stato modificato. I destinatari potrebbero essere cambiati."
-            }
-        }
-        await broadcast_message(json.dumps(payload))
-    except Exception as e:
-        print("[WebSocket] Errore broadcast su update_link:", e)
+
+    # 3. Conferma immediata SOLO per l'admin
+    resp = Response(status_code=200)
+    admin_trigger = create_admin_confirmation_trigger('delete', title)
+    print("[DEBUG-LINKS-DELETE] Payload conferma admin:", admin_trigger)
+    resp.headers["HX-Trigger"] = admin_trigger
     return resp
 
-@links_router.get("/links/new", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+@links_router.post("/{link_id}/edit", dependencies=[Depends(require_admin)])
+async def edit_link_submit(
+    request: Request, 
+    link_id: str, 
+    title: str = Form(...), 
+    url: str = Form(...), 
+    branch: str = Form(...), 
+    employment_type: list[str] = Form(...), 
+    show_on_home: bool = Form(False), 
+    current_user: dict = Depends(get_current_user)
+):
+    db = request.app.state.db
+    await db.links.update_one(
+        {"_id": ObjectId(link_id)}, 
+        {"$set": {
+            "title": title.strip(),
+            "url": url.strip(),
+            "branch": branch.strip(),
+            "employment_type": employment_type,
+            "show_on_home": show_on_home
+        }}
+    )
+
+    # 1. Notifica WebSocket SOLO ai destinatari
+    payload = create_action_notification_payload(
+        'update',
+        'link',
+        title.strip(),
+        str(current_user["_id"])
+    )
+    await broadcast_message(
+        payload, 
+        branch=branch, 
+        employment_type=employment_type,  # Passa la lista direttamente
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # 2. Aggiornamento highlights
+    await broadcast_resource_event(
+        event="update",
+        item_type="link",
+        item_id=link_id,
+        user_id=str(current_user["_id"])
+    )
+
+    # 3. Conferma immediata SOLO per l'admin
+    updated_link = await db.links.find_one({"_id": ObjectId(link_id)})
+    resp = request.app.state.templates.TemplateResponse(
+        "links/links_row_partial.html",
+        {"request": request, "link": updated_link, "current_user": current_user}
+    )
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title)
+    return resp
+
+@links_router.get("/new", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
 async def new_link_form(request: Request):
     template = "links/links_new_partial.html" if request.headers.get("hx-request") == "true" else "links/links_new.html"
     return request.app.state.templates.TemplateResponse(template, {"request": request})
+
+@links_router.get("/list", response_class=HTMLResponse)
+async def list_links_partial(request: Request, current_user=Depends(get_current_user)):
+    db = request.app.state.db
+    employment_type = current_user.get("employment_type")
+    branch = current_user.get("branch")
+    
+    if current_user["role"] == "admin" or not employment_type:
+        mongo_filter = {}
+    else:
+        mongo_filter = {
+            "$and": [
+                {
+                    "$or": [
+                        {"branch": "*"},
+                        {"branch": branch}
+                    ]
+                },
+                {
+                    "$or": [
+                        {"employment_type": {"$elemMatch": {"$in": [employment_type, "*"]}}},
+                        {"employment_type": {"$exists": False}},
+                        {"employment_type": []}
+                    ]
+                }
+            ]
+        }
+    
+    links = await db.links.find(mongo_filter).to_list(length=None)
+    
+    return request.app.state.templates.TemplateResponse(
+        "links/links_list_partial.html",
+        {
+            "request": request,
+            "links": links,
+            "current_user": current_user
+        }
+    )

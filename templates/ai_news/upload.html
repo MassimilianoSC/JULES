@@ -1,113 +1,72 @@
 {% extends "base.html" %}
-{% block title %}Carica news AI{% endblock %}
+{% import "components/card.html" as ui %}
+
 {% block content %}
-<div class="min-h-screen w-full bg-slate-100 flex flex-col items-center py-12 px-2 pb-40">
-  <div class="w-full max-w-4xl bg-white rounded-2xl shadow-2xl p-8">
+{% call ui.page_card() %}
 
-    <h1 class="text-3xl font-semibold text-slate-800 text-center mb-8">
-      Carica news AI
-    </h1>
+<h1 class="mb-10 text-center text-3xl font-bold text-slate-800">
+  Nuova AI news
+</h1>
 
-    <form method="post" enctype="multipart/form-data" action="/ai-news/upload" class="mx-auto grid max-w-lg gap-6">
-      <!-- Titolo -->
-      <div class="grid gap-2">
-        <label for="title" class="text-sm font-medium text-slate-700">Titolo</label>
-        <input id="title" name="title" type="text" required class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-      </div>
-
-      <!--  ░░ Destinatario ░░ -->
-      <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
-        <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
-
-        <!-- Filiale -->
-        <div class="grid gap-2">
-          <label for="branch" class="text-sm font-medium text-slate-700">Filiale</label>
-          <select id="branch" name="branch" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-            <option value="*">Tutte</option>
-            {% for b in branches %}
-              <option value="{{ b }}">{{ b }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <!-- Tipologia Assunzione -->
-        <div class="grid gap-2">
-          <label for="employment_type" class="text-sm font-medium text-slate-700">Tipologia assunzione</label>
-          <select id="employment_type" name="employment_type" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-            <option value="*">Tutte</option>
-            {% for t in types %}
-              <option value="{{ t }}">{{ {
-                "TD":"Tempo Determinato",
-                "TI":"Tempo Indeterminato",
-                "AP":"Apprendistato",
-                "CO":"Collaborazione"
-              }[t] }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </fieldset>
-
-      <!-- Tag -->
-      <div class="grid gap-2">
-        <label for="tags" class="text-sm font-medium text-slate-700">Tag (virgola separati)</label>
-        <input id="tags" name="tags" type="text" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-      </div>
-
-      <!-- Categoria -->
-      <div class="grid gap-2">
-        <label for="category" class="text-sm font-medium text-slate-700">Categoria</label>
-        <select id="category" name="category" required class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 focus:border-blue-500 focus:ring-blue-500 transition">
-          <option value="generic">Generica</option>
-          <option value="business">Aziendale</option>
-          <option value="technical">Tecnica</option>
-          <option value="other">Altro</option>
-        </select>
-        <span class="text-xs text-slate-500">Seleziona la categoria più appropriata per questa news.</span>
-      </div>
-
-      <!-- File (documento o video) -->
-      <div x-data="{ fileName: '' }" class="grid gap-2">
-        <label class="text-sm font-medium text-slate-700">File (PDF, Word, Video...)</label>
-        <label for="fileUploadAiNews"
-               class="cursor-pointer inline-flex items-center gap-2 rounded-lg
-                      bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800
-                      shadow hover:bg-blue-200 transition w-max">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
-               viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5-5m0 0l5 5m-5-5v12"/>
-          </svg>
-          <span x-text="fileName || 'Scegli file'" class="select-none"></span>
-        </label>
-        <input id="fileUploadAiNews" type="file" name="file" accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,video/*"
-               class="sr-only"
-               @change="fileName = $event.target.files[0]?.name">
-        <span class="text-xs text-slate-500">Puoi caricare un documento o un video.</span>
-      </div>
-
-      <!-- Link esterno (YouTube, Vimeo, altro) -->
-      <div class="grid gap-2">
-        <label for="external_url" class="text-sm font-medium text-slate-700">Link esterno (YouTube, Vimeo, altro)</label>
-        <input id="external_url" name="external_url" type="url" placeholder="https://..." class="w-full rounded-lg border border-slate-300 px-4 py-2 text-base text-slate-800 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 transition">
-        <span class="text-xs text-slate-500">Puoi inserire un link a una risorsa esterna o a un video online.</span>
-      </div>
-
-      <!-- Evidenza -->
-      <label class="inline-flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="show_on_home" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-        Metti in evidenza sulla home
-      </label>
-
-      <!-- Azioni -->
-      <div class="flex gap-4 justify-center pt-4">
-        <a href="/ai-news"
-           class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
-                  text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
-          Annulla
-        </a>
-        <button type="submit" class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 transition">Carica</button>
-      </div>
-    </form>
+<form action="/ai-news/upload" 
+      method="post" 
+      enctype="multipart/form-data"
+      class="mx-auto grid max-w-lg gap-6"
+      hx-post="/ai-news/upload"
+      hx-swap="none">
+  <!-- Titolo -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="title">Titolo</label>
+    <input required name="title" id="title" type="text" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
   </div>
-</div>
+  
+  <!-- Categoria -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="category">Categoria</label>
+    <select required name="category" id="category" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+      <option value="">Seleziona una categoria</option>
+      <option value="AI">Intelligenza Artificiale</option>
+      <option value="ML">Machine Learning</option>
+      <option value="DL">Deep Learning</option>
+      <option value="NLP">Natural Language Processing</option>
+      <option value="CV">Computer Vision</option>
+      <option value="OTHER">Altro</option>
+    </select>
+  </div>
+  
+  <!-- File -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="file">File</label>
+    <input required name="file" id="file" type="file" accept=".pdf" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+  
+  <!-- ░░ Destinatario ░░ -->
+  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+    {% include "components/branch_and_hire_selects.html" %}
+  </fieldset>
+
+  <!-- Evidenza in home -->
+  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+    <input type="checkbox" id="show_on_home" name="show_on_home" value="true" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+    Metti in evidenza sulla home
+  </label>
+
+  <div class="flex gap-4 justify-center pt-4">
+    <a href="/ai-news" 
+       class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
+              text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+      Annulla
+    </a>
+    <button type="submit"
+            class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
+                   text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+      Salva
+    </button>
+  </div>
+</form>
+
+<div class="pb-40"></div>
+
+{% endcall %}
 {% endblock %}

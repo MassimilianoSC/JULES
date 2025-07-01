@@ -1,10 +1,12 @@
-<div id="nav-ai-news-badge-container"
-     hx-get="/notifiche/count/ai_news"
-     hx-trigger="refreshAiNewsBadgeEvent from:body"
-     hx-swap="outerHTML">
-    {% if unread_ai_news_count > 0 %}
-    <div class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-        {{ unread_ai_news_count }}
-    </div>
-    {% endif %}
+<div id="nav-ai-news-badge-container">
+  {% if unread_ai_news_count %}
+  <span id="nav-ai-news-badge"
+        hx-get="/notifiche/count/ai_news"
+        hx-trigger="notifications.refresh from:body"
+        hx-credentials="include"
+        hx-swap="innerHTML"
+        class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+    {{ unread_ai_news_count }}
+  </span>
+  {% endif %}
 </div>

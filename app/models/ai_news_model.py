@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Literal
 from pydantic import BaseModel, Field
 from bson import ObjectId
 from datetime import datetime
+from enum import Enum
 
 class PyObjectId(ObjectId):
     @classmethod
@@ -91,6 +92,25 @@ class CommentDB(CommentBase):
     updated_at: Optional[datetime] = None
     likes: int = 0
     replies_count: int = 0
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {ObjectId: str}
+
+class ViewActionType(str, Enum):
+    PREVIEW = "preview"
+    DOWNLOAD = "download"
+    VIEW = "view"
+
+class ViewIn(BaseModel):
+    action_type: ViewActionType = Field(default=ViewActionType.VIEW)
+
+class ViewDB(BaseModel):
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    user_id: PyObjectId
+    news_id: PyObjectId
+    last_view: datetime
+    action: ViewActionType
 
     class Config:
         populate_by_name = True

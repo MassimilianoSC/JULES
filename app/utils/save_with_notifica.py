@@ -1,32 +1,12 @@
-from datetime import datetime
-from fastapi import Request
-from app.notifiche import crea_notifica
+# ATTENZIONE: Questa funzione è deprecata e non dovrebbe più essere usata.
+# La logica di notifica e conferma è ora gestita direttamente
+# nei controller delle risorse (es. links.py, documents.py) utilizzando
+# gli helper in notification_helpers.py.
 
-
-async def save_and_notify(
-    *,
-    request:   Request,
-    collection: str,
-    payload:    dict,
-    tipo:       str,
-    titolo:     str,
-    branch:     str,
-):
+async def save_and_notify(*args, **kwargs):
     """
-    Inserisce `payload` in `collection` e genera la notifica.
-    Ritorna l'`inserted_id` del documento creato.
+    Questa funzione è un guscio vuoto per mantenere la compatibilità
+    durante il refactoring. Verrà rimossa a breve.
     """
-    db  = request.app.state.db
-    res = await db[collection].insert_one(
-        {**payload, "created_at": datetime.utcnow()}
-    )
-
-    await crea_notifica(
-        request=request,
-        tipo=tipo,
-        titolo=titolo,
-        branch=branch,
-        id_risorsa=str(res.inserted_id),
-        employment_type=payload.get("employment_type", ["*"])
-    )
-    return res.inserted_id
+    print("[DEPRECATED] La funzione save_and_notify è stata chiamata ma è obsoleta. Ignorata.")
+    pass

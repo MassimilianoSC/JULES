@@ -1,3 +1,4 @@
+{% set new = d._id in new_doc_ids %}
 <div id="ai-news-{{ d._id }}" class="p-4 {% if new_doc_ids is defined and d._id|string in new_doc_ids %}bg-yellow-50 border-l-4 border-yellow-400 animate-pulse{% endif %}" data-category="{{ d.category }}">
   <div class="flex flex-row justify-between">
     <div class="flex-1">
@@ -65,14 +66,9 @@
         class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
         Modifica
       </button>
-      <form
-        hx-delete="/ai-news/{{ d._id }}"
-        hx-target="#ai-news-{{ d._id }}"
-        hx-swap="delete"
-        style="display:inline">
-        <button type="button"
-                onclick="showDelete(this)"
-                class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      <form hx-delete="/ai-news/{{ d._id }}" hx-target="#ai-news-{{ d._id }}" hx-swap="delete">
+        <button type="button" onclick="showDelete(this)"
+          class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
           Elimina
         </button>
       </form>
@@ -93,9 +89,8 @@
 
       <span id="likes-{{ d._id }}" class="flex items-center gap-1 group">
         <button 
-            id="like-btn-{{ d._id }}"
-            onclick="likeNews('{{ d._id }}')"
-            class="like-button flex items-center gap-1 hover:text-blue-600 transition-colors"
+            class="like-btn like-button flex items-center gap-1 hover:text-blue-600 transition-colors"
+            data-news="{{ d._id }}"
             data-liked="{{ 'true' if d.user_liked else 'false' }}">
             <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="{{ 'currentColor' if d.user_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
@@ -105,7 +100,7 @@
         </button>
       </span>
 
-      <span id="comments-{{ d._id }}" class="flex items-center gap-1 group cursor-pointer" onclick="toggleComments('{{ d._id }}')">
+      <span id="comments-{{ d._id }}" class="flex items-center gap-1 group cursor-pointer comments-toggle" data-open="false" data-news-id="{{ d._id }}">
         <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
         </svg>
@@ -116,7 +111,9 @@
 
     <!-- Pulsante Condividi -->
     <button 
-        onclick="shareNews('{{ d._id }}', '{{ d.title }}')"
+        data-share-btn
+        data-id="{{ d._id }}"
+        data-title="{{ d.title }}"
         class="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 transition-colors group">
         <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
@@ -128,11 +125,11 @@
   <!-- Sezione commenti nascosta di default -->
   <div id="comments-section-{{ d._id }}" class="mt-6 space-y-4 hidden">
     <!-- Barra di Ricerca e Filtri -->
-    <div class="bg-white rounded-lg shadow p-4 mb-4">
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow p-4 mb-4">
       <div class="flex flex-col md:flex-row gap-4">
         <div class="flex gap-2">
           <!-- Solo ordinamento -->
-          <select id="sort-comments-{{ d._id }}">
+          <select id="sort-comments-{{ d._id }}" class="text-sm">
             <option value="newest">Dal più recente</option>
             <option value="oldest">Dal più vecchio</option>
             <option value="likes">Dal più apprezzato</option>
@@ -141,129 +138,69 @@
         </div>
       </div>
     </div>
+    
     <!-- Form Nuovo Commento -->
-    <div class="bg-white rounded-lg shadow p-4">
-      <form
-        hx-post="/api/ai-news/{{ d._id }}/comments"
-        hx-target="#comments-list-{{ d._id }}"
-        hx-swap="afterbegin"
-        hx-on::after-request="if(event.detail.successful) this.querySelector('textarea').value = ''"
-        class="space-y-3"
-        hx-encoding="multipart/form-data">
-        <div class="flex items-start space-x-3">
-          <img src="{{ user.avatar if user and user.avatar else '/static/img/avatar-default.png' }}" 
-               alt="Avatar" 
-               class="w-10 h-10 rounded-full">
-          <div class="flex-1">
-            <div class="relative">
-              <textarea
-                name="content"
-                id="comment-input-{{ d._id }}"
-                rows="2"
-                class="w-full py-2 pl-2 text-sm text-gray-900 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Scrivi un commento..."
-                maxlength="1000"
-                required
-                aria-label="Scrivi un commento"
-                oninput="updatePreview(this, '{{ d._id }}')"
-                onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.closest('form').dispatchEvent(new Event('submit')); }">
-              </textarea>
-              <!-- Anteprima Markdown -->
-              <div id="preview-{{ d._id }}" class="mt-2 p-3 bg-gray-50 rounded-lg prose prose-sm max-w-none hidden"></div>
-              <!-- Modifica la posizione del pulsante emoji -->
-              <button 
-                type="button"
-                onclick="toggleEmojiPicker(this)"
-                class="absolute bottom-2 left-1.5 text-gray-400 hover:text-gray-600"
-                aria-label="Inserisci emoji">
-                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 100-2 1 1 0 000 2zm7-1a1 1 0 11-2 0 1 1 0 012 0zm-7.536 5.879a1 1 0 001.415 0 3 3 0 014.242 0 1 1 0 001.415-1.415 5 5 0 00-7.072 0 1 1 0 000 1.415z" clip-rule="evenodd"/>
-                </svg>
-              </button>
-              <div class="absolute bottom-2 right-2 text-xs text-gray-400">
-                <span id="char-count-{{ d._id }}">1000</span>/1000
-              </div>
-            </div>
-            <div class="flex justify-between items-center mt-2">
-              <div class="flex gap-2">
-                <button type="button"
-                        onclick="togglePreview('{{ d._id }}')"
-                        class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                        aria-label="Mostra/Nascondi anteprima">
-                  <span>Anteprima Markdown</span>
-                </button>
-                <button type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                        aria-label="Invia commento">
-                  Commenta
-                </button>
-              </div>
-            </div>
-          </div>
+    <div class="max-w-2xl mx-auto bg-white rounded-lg shadow p-4">
+      <form id="comment-form-{{ d._id }}" class="space-y-4" data-comment-form data-id="{{ d._id }}">
+        <div>
+          <label for="comment-{{ d._id }}" class="sr-only">Il tuo commento</label>
+          <textarea id="comment-{{ d._id }}" name="content" rows="3"
+                    class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                    placeholder="Scrivi un commento..."></textarea>
+        </div>
+        <div class="flex justify-end">
+          <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+            Commenta
+          </button>
         </div>
       </form>
     </div>
 
     <!-- Lista Commenti -->
-    <div class="comments-container mt-4">
+    <div class="comments-container mt-4 max-w-2xl mx-auto">
       <div id="comments-list-{{ d._id }}" class="space-y-4">
         {% for comment in d.comments %}
         <div id="comment-{{ comment._id }}" class="bg-white rounded-lg shadow p-4">
           <div class="flex items-start space-x-3">
-            <img src="{{ comment.author.avatar if comment.author and comment.author.avatar else '/static/img/avatar-default.png' }}" 
-                 alt="Avatar" 
-                 class="w-10 h-10 rounded-full">
+            <div class="flex-shrink-0">
+              <img class="h-10 w-10 rounded-full" src="/static/img/avatar-default.png" alt="">
+            </div>
             <div class="flex-1">
               <div class="flex items-center justify-between">
-                <div class="text-sm font-medium text-gray-900">{{ comment.author.name }}</div>
-                <div class="text-xs text-gray-500">{{ comment.created_at.strftime('%d/%m/%Y %H:%M') }}</div>
+                <div class="text-sm font-medium text-gray-900">{{ comment.user_name }}</div>
+                <div class="text-xs text-gray-500">{{ comment.created_at | format_datetime }}</div>
               </div>
               <div class="mt-1 prose prose-sm max-w-none text-gray-800">{{ comment.content | markdown | safe }}</div>
-              <div class="mt-2 flex items-center space-x-4 text-sm">
-                <button onclick="toggleCommentLike('{{ comment._id }}')"
-                        class="flex items-center space-x-1 text-gray-500 hover:text-blue-600"
-                        aria-label="Metti like al commento">
-                  <svg class="w-4 h-4" fill="{{ 'currentColor' if comment.user_has_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"/>
-                  </svg>
-                  <span>{{ comment.likes | default(0) }}</span>
+              
+              <!-- Reactions -->
+              <div class="mt-2 flex items-center space-x-2">
+                <button class="reaction-button text-gray-500 hover:text-gray-700"
+                        data-comment-id="{{ comment._id }}"
+                        data-reaction="like">
+                  <span class="reaction-count">{{ comment.reactions.get('like', 0) }}</span>
+                  <i class="fas fa-thumbs-up"></i>
                 </button>
-                <button onclick="showReplyForm('{{ comment._id }}')"
-                        class="flex items-center space-x-1 text-gray-500 hover:text-blue-600"
-                        aria-label="Rispondi al commento">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-                  </svg>
-                  <span>Rispondi</span>
-                </button>
-                {% if user and (user.role == 'admin' or user._id == comment.author._id) %}
-                <button onclick="deleteComment('{{ comment._id }}')"
-                        class="flex items-center space-x-1 text-gray-500 hover:text-red-600"
-                        aria-label="Elimina commento">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                  </svg>
-                  <span>Elimina</span>
-                </button>
-                {% endif %}
               </div>
+
+              <!-- Reply button -->
+              <button class="reply-button mt-2 text-sm text-gray-500 hover:text-gray-700"
+                      data-comment-id="{{ comment._id }}">
+                Rispondi
+              </button>
+
+              <!-- Delete button -->
+              {% if user and (user.role == 'admin' or user._id|string == comment.user_id) %}
+              <button 
+                      data-delete-comment-btn
+                      data-id="{{ comment._id }}"
+                      class="ml-2 text-sm text-red-500 hover:text-red-700">
+                Elimina
+              </button>
+              {% endif %}
             </div>
           </div>
         </div>
         {% endfor %}
-        <!-- Paginazione Commenti -->
-        {% if d.comments and d.comments|length >= 10 %}
-        <div class="flex justify-center mt-4">
-          <button
-            hx-get="/api/ai-news/{{ d._id }}/comments?page={{ d.current_page + 1 }}"
-            hx-target="#comments-list-{{ d._id }}"
-            hx-swap="beforeend"
-            class="px-4 py-2 text-sm text-gray-600 bg-white rounded-lg shadow hover:bg-gray-50"
-            aria-label="Carica altri commenti">
-            Carica altri commenti
-          </button>
-        </div>
-        {% endif %}
       </div>
     </div>
   </div>
@@ -272,3 +209,136 @@
 <!-- Aggiungi DOMPurify e marked.js per l'anteprima markdown -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<script type="module">
+  import { initAiNewsRow } from "/static/js/features/ai-news/index.js";
+  import { showToast } from '/static/js/features/notifications/toast.js';
+  import { eventBus } from '/static/js/core/event-bus.js';
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    initAiNewsRow('{{ d._id }}');
+
+    // Gestione eliminazione
+    document.addEventListener('click', e => {
+      const deleteBtn = e.target.closest('[data-delete-url]');
+      
+      if (deleteBtn) {
+        e.preventDefault();
+        const url = deleteBtn.dataset.deleteUrl;
+        const newsId = deleteBtn.dataset.newsId;
+        const newsElement = document.querySelector(`#ai-news-${newsId}`);
+        
+        Swal.fire({
+          title: 'Sei sicuro?',
+          text: 'Questa azione non può essere annullata',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Sì, elimina',
+          cancelButtonText: 'Annulla',
+          reverseButtons: true
+        }).then((result) => {
+          if (result.isConfirmed) {
+            // Facciamo la chiamata DELETE manualmente
+            fetch(url, {
+              method: 'DELETE',
+              headers: {
+                'HX-Request': 'true'
+              }
+            }).then(response => {
+              if (response.ok) {
+                // Prima rimuoviamo l'elemento dalla UI
+                if (newsElement) {
+                  newsElement.remove();
+                }
+
+                // Emettiamo l'evento sul bus
+                eventBus.emit('resource/delete', {
+                  type: 'ai_news',
+                  id: newsId
+                });
+
+                // Verifichiamo se c'è un trigger di conferma admin
+                response.headers.get('HX-Trigger')
+                  .then(triggerHeader => {
+                    console.log('HX-Trigger header:', triggerHeader);
+                    if (triggerHeader) {
+                      try {
+                        const trigger = JSON.parse(triggerHeader);
+                        if (trigger.showAdminConfirmation) {
+                          const { title, message, level, duration } = trigger.showAdminConfirmation;
+                          Swal.fire({
+                            title,
+                            text: message,
+                            icon: level,
+                            timer: duration,
+                            showConfirmButton: false
+                          });
+                        }
+                      } catch (e) {
+                        console.error('Errore nel parsing del trigger:', e);
+                        showToast({
+                          title: 'Operazione completata',
+                          body: 'La AI News è stata eliminata con successo',
+                          type: 'success'
+                        });
+                      }
+                    }
+                  });
+              } else {
+                showToast({
+                  title: 'Errore',
+                  body: 'Si è verificato un errore durante l\'eliminazione',
+                  type: 'error'
+                });
+              }
+            }).catch(error => {
+              console.error('Errore durante l\'eliminazione:', error);
+              showToast({
+                title: 'Errore',
+                body: 'Si è verificato un errore durante l\'eliminazione',
+                type: 'error'
+              });
+            });
+          }
+        });
+      }
+    });
+
+    // Ascolta eventi HTMX per mostrare toast di conferma
+    document.body.addEventListener('htmx:afterRequest', (evt) => {
+      if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/ai-news/')) {
+        const triggerData = evt.detail.xhr.getResponseHeader('HX-Trigger');
+        let showToastNotification = true; // Default: mostra il toast
+
+        if (triggerData) {
+          try {
+            const triggers = JSON.parse(triggerData);
+            if (triggers.showAdminConfirmation) {
+              // Se c'è la conferma admin, mostra Swal e non mostrare il toast
+              showToastNotification = false;
+              const conf = triggers.showAdminConfirmation;
+              Swal.fire({
+                title: conf.title,
+                text: conf.message,
+                icon: conf.level,
+                timer: conf.duration,
+                showConfirmButton: false
+              });
+            }
+          } catch (e) {
+            console.error('Errore parsing trigger:', e);
+          }
+        }
+
+        // Mostra il toast se non c'è conferma admin (quindi per lo staff)
+        if (showToastNotification) {
+          showToast({
+            title: 'Operazione completata',
+            body: 'La AI News è stata aggiornata con successo',
+            type: 'success'
+          });
+        }
+      }
+    });
+  });
+</script>
