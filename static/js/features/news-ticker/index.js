@@ -1,68 +1,177 @@
 import { eventBus } from '../../core/event-bus.js';
 
-// Aggiorna il ticker quando arriva una nuova news
-eventBus.on('news.updated', () => {
-    htmx.trigger('#news-ticker', 'refreshNewsEvent');
-});
-
-// Gestione dello scroller orizzontale per le news
 document.addEventListener('DOMContentLoaded', () => {
-    const scroller = document.getElementById('news-scroller');
-    const leftBtn = document.getElementById('scroll-left-btn');
-    const rightBtn = document.getElementById('scroll-right-btn');
+    const tickerContainer = document.getElementById('news-ticker'); // Usiamo l'ID del contenitore principale del ticker
+    const itemsContainer = document.getElementById('news-ticker-items-container');
 
-    if (!scroller || !leftBtn || !rightBtn) return;
+    if (!tickerContainer || !itemsContainer) {
+        console.warn('News ticker container or items container not found.');
+        return;
+    }
 
-    // Configurazione dello scroll
-    const SCROLL_AMOUNT = 400; // px da scrollare per click
-    const SCROLL_BEHAVIOR = { behavior: 'smooth' };
+    let animationInterval;
+    let scrollAmount = 1; // Pixel da scrollare per frame
+    const animationSpeed = 20; // Millisecondi per frame (più basso = più veloce)
+    let isPaused = false;
 
-    // Funzioni di scroll
-    const scrollLeft = () => {
-        scroller.scrollBy({ left: -SCROLL_AMOUNT, ...SCROLL_BEHAVIOR });
+    function достаточноСодержимогоДляСкролла() {
+        return itemsContainer.scrollWidth > itemsContainer.clientWidth;
+    }
+
+    function startScrolling() {
+        if (!достаточноСодержимогоДляСкролла()) {
+            // console.log("Ticker: Not enough content to scroll.");
+            return;
+        }
+        // console.log("Ticker: Starting scroll");
+        clearInterval(animationInterval); // Pulisce intervalli precedenti
+        animationInterval = setInterval(() => {
+            if (!isPaused && достаточноСодержимогоДляСкролла()) {
+                itemsContainer.scrollLeft += scrollAmount;
+                if (itemsContainer.scrollLeft >= (itemsContainer.scrollWidth - itemsContainer.clientWidth -1)) {
+                    // Quando si raggiunge la fine, si può clonare il contenuto per un loop infinito
+                    // Per ora, semplice reset allo start per evitare overscroll e blocco.
+                    // Una soluzione più elegante clonerebbe gli elementi.
+                    // itemsContainer.scrollLeft = 0; // Semplice reset
+
+                    // Per un effetto di loop più fluido, potremmo aggiungere il primo elemento alla fine
+                    // e quando il primo "originale" scompare, lo si sposta.
+                    // Qui un approccio più semplice: quando arriva alla fine, aspetta un po' e ricomincia.
+                    // Questo è un placeholder, l'animazione di loop continuo è più complessa.
+                    // Temporaneamente, fermiamo lo scroll quando arriva alla fine per evitare comportamenti strani.
+                     itemsContainer.scrollLeft = 0; // Torna all'inizio per un loop semplice
+                }
+            }
+        }, animationSpeed);
+    }
+
+    function stopScrolling() {
+        // console.log("Ticker: Stopping scroll");
+        clearInterval(animationInterval);
+    }
+
+    // --- Gestione Eventi WebSocket ---
+    const createNewsItemElement = (newsData) => {
+        const itemSpan = document.createElement('span');
+        itemSpan.id = `news-ticker-item-${newsData.id}`;
+        itemSpan.className = 'news-ticker-item whitespace-nowrap font-bold';
+
+        const link = document.createElement('a');
+        link.href = newsData.url_news; // Usiamo url_news dal payload
+        link.className = 'hover:underline hover:text-yellow-200 transition';
+        link.textContent = newsData.title;
+
+        itemSpan.appendChild(link);
+        return itemSpan;
     };
 
-    const scrollRight = () => {
-        scroller.scrollBy({ left: SCROLL_AMOUNT, ...SCROLL_BEHAVIOR });
+    const addSeparatorIfNeeded = () => {
+        if (itemsContainer.children.length > 0 && itemsContainer.lastChild.nodeName === 'SPAN') {
+            const lastChildIsSeparator = itemsContainer.lastChild.classList && itemsContainer.lastChild.classList.contains('news-ticker-separator');
+            if (!lastChildIsSeparator) { // Evita doppi separatori
+                 // Controlla se l'ultimo figlio NON è già un separatore prima di aggiungerne uno.
+                const currentSpans = Array.from(itemsContainer.querySelectorAll('.news-ticker-item'));
+                if (currentSpans.length > 1) { // Aggiungi separatore solo se c'è più di un item
+                    const prevItem = currentSpans[currentSpans.length-2]; // L'item prima di quello appena aggiunto
+                    // Rimuovi eventuale separatore dopo l'item precedente se esiste
+                    if(prevItem && prevItem.nextElementSibling && prevItem.nextElementSibling.classList.contains('news-ticker-separator')) {
+                        // Non fare nulla, il separatore è già lì o sarà gestito
+                    } else {
+                        const separator = document.createElement('span');
+                        separator.className = 'news-ticker-separator text-cyan-200 font-bold text-lg px-2';
+                        separator.innerHTML = '|';
+                        itemsContainer.appendChild(separator);
+                    }
+                }
+            }
+        }
     };
 
-    // Event listeners per i pulsanti
-    leftBtn.addEventListener('click', scrollLeft);
-    rightBtn.addEventListener('click', scrollRight);
+    const ensureSeparatorsCorrect = () => {
+        const items = itemsContainer.querySelectorAll('.news-ticker-item');
+        const separators = itemsContainer.querySelectorAll('.news-ticker-separator');
+        separators.forEach(sep => sep.remove()); // Rimuovi tutti i separatori esistenti
 
-    // Gestione visibilità pulsanti in base alla posizione dello scroll
-    const updateButtonVisibility = () => {
-        const isAtStart = scroller.scrollLeft <= 0;
-        const isAtEnd = scroller.scrollLeft >= (scroller.scrollWidth - scroller.clientWidth);
-
-        // Aggiorna opacità invece di display per mantenere l'animazione
-        leftBtn.style.opacity = isAtStart ? '0' : '1';
-        rightBtn.style.opacity = isAtEnd ? '0' : '1';
-
-        // Disabilita i pulsanti quando non necessari
-        leftBtn.disabled = isAtStart;
-        rightBtn.disabled = isAtEnd;
+        items.forEach((item, index) => {
+            if (index < items.length - 1) { // Non aggiungere separatore dopo l'ultimo item
+                const separator = document.createElement('span');
+                separator.className = 'news-ticker-separator text-cyan-200 font-bold text-lg px-2';
+                separator.innerHTML = '|';
+                item.after(separator); // Inserisci separatore dopo l'item corrente
+            }
+        });
     };
 
-    // Osserva cambiamenti nel contenuto per aggiornare i pulsanti
-    const observer = new ResizeObserver(updateButtonVisibility);
-    observer.observe(scroller);
 
-    // Event listeners per aggiornare i pulsanti
-    scroller.addEventListener('scroll', updateButtonVisibility);
-    window.addEventListener('resize', updateButtonVisibility);
+    eventBus.on("news_ticker_add", (eventData) => {
+        // console.log("Received news_ticker_add:", eventData.data);
+        const newsItem = createNewsItemElement(eventData.data);
+        // Prima di aggiungere il nuovo item, assicuriamoci che ci sia un separatore se necessario
+        if (itemsContainer.children.length > 0) { // Se ci sono già items
+             if (!itemsContainer.lastElementChild.classList.contains('news-ticker-separator')) {
+                const separator = document.createElement('span');
+                separator.className = 'news-ticker-separator text-cyan-200 font-bold text-lg px-2';
+                separator.innerHTML = '|';
+                itemsContainer.appendChild(separator);
+            }
+        }
+        itemsContainer.appendChild(newsItem);
+        ensureSeparatorsCorrect();
+        stopScrolling();
+        startScrolling();
+    });
 
-    // Inizializza lo stato dei pulsanti
-    updateButtonVisibility();
+    eventBus.on("news_ticker_update", (eventData) => {
+        // console.log("Received news_ticker_update:", eventData.data);
+        const newsItemElement = document.getElementById(`news-ticker-item-${eventData.data.id}`);
+        if (newsItemElement) {
+            const link = newsItemElement.querySelector('a');
+            if(link){
+                link.href = eventData.data.url_news;
+                link.textContent = eventData.data.title;
+            }
+        }
+        // Non è necessario riavviare lo scroll per un update di testo
+    });
 
-    // Gestione scroll con tastiera (accessibilità)
-    scroller.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowLeft') {
-            e.preventDefault();
-            scrollLeft();
-        } else if (e.key === 'ArrowRight') {
-            e.preventDefault();
-            scrollRight();
+    eventBus.on("news_ticker_remove", (eventData) => {
+        // console.log("Received news_ticker_remove:", eventData.data);
+        const newsItemElement = document.getElementById(`news-ticker-item-${eventData.data.id}`);
+        if (newsItemElement) {
+            const nextSeparator = newsItemElement.nextElementSibling;
+            if (nextSeparator && nextSeparator.classList.contains('news-ticker-separator')) {
+                nextSeparator.remove();
+            } else {
+                 // Se l'elemento da rimuovere non è l'ultimo, il separatore da rimuovere potrebbe essere quello prima
+                const prevSeparator = newsItemElement.previousElementSibling;
+                if (prevSeparator && prevSeparator.classList.contains('news-ticker-separator')) {
+                     prevSeparator.remove();
+                }
+            }
+            newsItemElement.remove();
+            ensureSeparatorsCorrect();
+            stopScrolling();
+            startScrolling();
         }
     });
+
+    // --- Gestione Mouse Enter/Leave per Pausa/Ripresa ---
+    tickerContainer.addEventListener('mouseenter', () => {
+        isPaused = true;
+        // console.log("Ticker: Paused by mouseenter");
+    });
+
+    tickerContainer.addEventListener('mouseleave', () => {
+        isPaused = false;
+        // console.log("Ticker: Resumed by mouseleave");
+        // Riavvia lo scorrimento solo se era in corso e c'è abbastanza contenuto
+        if (animationInterval) { // Se era in corso prima della pausa
+             startScrolling(); // Riavvia per assicurare che continui se le condizioni sono soddisfatte
+        }
+    });
+
+    // Avvia lo scorrimento iniziale
+    startScrolling();
+    // Aggiorna lo stato dei pulsanti (se li manteniamo o reintroduciamo)
+    // updateButtonVisibility(); // Se i pulsanti di scroll manuale fossero ancora usati
 }); 

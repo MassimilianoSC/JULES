@@ -4,12 +4,19 @@
     <span class="bg-white/90 text-violet-700 text-xs font-extrabold px-4 py-1 rounded-full shadow-lg tracking-wider border-2 border-violet-500">NEWS</span>
   </div>
   <!-- News content -->
-  <div class="flex-1 flex flex-nowrap overflow-x-auto items-center gap-x-6 gap-y-2 text-white text-base font-semibold whitespace-nowrap drop-shadow">
-    {% for n in news %}
-      <span class="whitespace-nowrap font-bold">
-        {% if n._id %}<a href="/news" class="hover:underline hover:text-yellow-200 transition">{{ n.title }}</a>{% else %}{{ n.title }}{% endif %}
+  <div id="news-ticker-items-container" class="flex-1 flex flex-nowrap overflow-x-auto items-center gap-x-6 gap-y-2 text-white text-base font-semibold whitespace-nowrap drop-shadow">
+    {% for news_item in news %}
+      <span id="news-ticker-item-{{ news_item._id }}" class="news-ticker-item whitespace-nowrap font-bold">
+        {# L'URL corretto verrà inserito da JavaScript per i nuovi item,
+           e per quelli esistenti potrebbe essere aggiornato se la logica JS lo prevede.
+           Per il rendering iniziale, un link generico alla pagina news va bene, o all'item specifico se disponibile.
+           Assumiamo che n.url_news esista o venga costruito in modo appropriato se la news è cliccabile.
+           Per ora, manteniamo il link a /news per semplicità nel rendering iniziale statico.
+           Il JS creerà l'<a> con l'href corretto.
+        #}
+        <a href="{{ url_for('list_news') }}#news-item-{{ news_item._id }}" class="hover:underline hover:text-yellow-200 transition">{{ news_item.title }}</a>
       </span>
-      {% if not loop.last %}<span class="text-cyan-200 font-bold text-lg px-2">|</span>{% endif %}
+      {% if not loop.last %}<span class="news-ticker-separator text-cyan-200 font-bold text-lg px-2">|</span>{% endif %}
     {% endfor %}
     {% if news|length == 0 %}
       <span class="text-slate-200">Nessuna news disponibile</span>
