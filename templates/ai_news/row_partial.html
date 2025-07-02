@@ -66,9 +66,15 @@
         class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
         Modifica
       </button>
-      <form hx-delete="/ai-news/{{ d._id }}" hx-target="#ai-news-{{ d._id }}" hx-swap="delete">
-        <button type="button" onclick="showDelete(this)"
-          class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      <form hx-delete="/ai-news/{{ d._id }}"
+            hx-target="#ai-news-{{ d._id }}"
+            hx-swap="outerHTML" {# Use outerHTML to remove the whole div, or rely on JS event for removal #}
+            class="inline-block"> {# Ensure form itself is inline if button is to be side-by-side #}
+        <button type="button"
+                data-delete-url="/ai-news/{{ d._id }}"
+                data-item-id="{{ d._id }}"
+                data-item-name="{{ d.title }}"
+                class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
           Elimina
         </button>
       </form>
@@ -211,134 +217,17 @@
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
 <script type="module">
+  // Removed the specific delete and htmx:afterRequest handling from here.
+  // This will be handled by global scripts:
+  // - static/js/features/ai-news-delete.js for delete confirmation.
+  // - Global HTMX event listeners (e.g. in features/notifications/confirmations.js or similar) for admin SweetAlerts.
+  // - Global WebSocket listeners (e.g. in features/notifications/websocket.js and toast.js) for non-admin toasts.
   import { initAiNewsRow } from "/static/js/features/ai-news/index.js";
-  import { showToast } from '/static/js/features/notifications/toast.js';
-  import { eventBus } from '/static/js/core/event-bus.js';
   
   document.addEventListener('DOMContentLoaded', () => {
+    // Initialize other row-specific JS if any (e.g., like buttons, comment toggles)
+    // The initAiNewsRow function should focus on functionalities other than CRUD confirmations/feedback,
+    // or be adapted to not interfere with the global handlers.
     initAiNewsRow('{{ d._id }}');
-
-    // Gestione eliminazione
-    document.addEventListener('click', e => {
-      const deleteBtn = e.target.closest('[data-delete-url]');
-      
-      if (deleteBtn) {
-        e.preventDefault();
-        const url = deleteBtn.dataset.deleteUrl;
-        const newsId = deleteBtn.dataset.newsId;
-        const newsElement = document.querySelector(`#ai-news-${newsId}`);
-        
-        Swal.fire({
-          title: 'Sei sicuro?',
-          text: 'Questa azione non può essere annullata',
-          icon: 'warning',
-          showCancelButton: true,
-          confirmButtonText: 'Sì, elimina',
-          cancelButtonText: 'Annulla',
-          reverseButtons: true
-        }).then((result) => {
-          if (result.isConfirmed) {
-            // Facciamo la chiamata DELETE manualmente
-            fetch(url, {
-              method: 'DELETE',
-              headers: {
-                'HX-Request': 'true'
-              }
-            }).then(response => {
-              if (response.ok) {
-                // Prima rimuoviamo l'elemento dalla UI
-                if (newsElement) {
-                  newsElement.remove();
-                }
-
-                // Emettiamo l'evento sul bus
-                eventBus.emit('resource/delete', {
-                  type: 'ai_news',
-                  id: newsId
-                });
-
-                // Verifichiamo se c'è un trigger di conferma admin
-                response.headers.get('HX-Trigger')
-                  .then(triggerHeader => {
-                    console.log('HX-Trigger header:', triggerHeader);
-                    if (triggerHeader) {
-                      try {
-                        const trigger = JSON.parse(triggerHeader);
-                        if (trigger.showAdminConfirmation) {
-                          const { title, message, level, duration } = trigger.showAdminConfirmation;
-                          Swal.fire({
-                            title,
-                            text: message,
-                            icon: level,
-                            timer: duration,
-                            showConfirmButton: false
-                          });
-                        }
-                      } catch (e) {
-                        console.error('Errore nel parsing del trigger:', e);
-                        showToast({
-                          title: 'Operazione completata',
-                          body: 'La AI News è stata eliminata con successo',
-                          type: 'success'
-                        });
-                      }
-                    }
-                  });
-              } else {
-                showToast({
-                  title: 'Errore',
-                  body: 'Si è verificato un errore durante l\'eliminazione',
-                  type: 'error'
-                });
-              }
-            }).catch(error => {
-              console.error('Errore durante l\'eliminazione:', error);
-              showToast({
-                title: 'Errore',
-                body: 'Si è verificato un errore durante l\'eliminazione',
-                type: 'error'
-              });
-            });
-          }
-        });
-      }
-    });
-
-    // Ascolta eventi HTMX per mostrare toast di conferma
-    document.body.addEventListener('htmx:afterRequest', (evt) => {
-      if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/ai-news/')) {
-        const triggerData = evt.detail.xhr.getResponseHeader('HX-Trigger');
-        let showToastNotification = true; // Default: mostra il toast
-
-        if (triggerData) {
-          try {
-            const triggers = JSON.parse(triggerData);
-            if (triggers.showAdminConfirmation) {
-              // Se c'è la conferma admin, mostra Swal e non mostrare il toast
-              showToastNotification = false;
-              const conf = triggers.showAdminConfirmation;
-              Swal.fire({
-                title: conf.title,
-                text: conf.message,
-                icon: conf.level,
-                timer: conf.duration,
-                showConfirmButton: false
-              });
-            }
-          } catch (e) {
-            console.error('Errore parsing trigger:', e);
-          }
-        }
-
-        // Mostra il toast se non c'è conferma admin (quindi per lo staff)
-        if (showToastNotification) {
-          showToast({
-            title: 'Operazione completata',
-            body: 'La AI News è stata aggiornata con successo',
-            type: 'success'
-          });
-        }
-      }
-    });
   });
 </script>

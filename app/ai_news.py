@@ -43,143 +43,159 @@ def to_str_id(doc: dict) -> dict:
 
 ai_news_router = APIRouter(tags=["ai_news"])
 
+# Corrected type hint for employment_type and other optional fields.
+# Added current_user dependency.
+# Changed response_class to Response for header manipulation.
 @ai_news_router.post(
-    "/ai-news/upload",
-    response_class=PlainTextResponse,
+    "/ai-news/upload", # This is the "create" endpoint
+    response_class=Response,
     dependencies=[Depends(require_admin)]
 )
 async def upload_ai_news(
     request: Request,
     title: str = Form(...),
     branch: str = Form(...),
-    employment_type: str = Form("*"),
-    tags: str = Form(None),
-    file: UploadFile = File(None),
-    external_url: str = Form(None),
-    show_on_home: str = Form(None),
-    category: str = Form(...)
+    employment_type: List[str] = Form(...), # Expect List[str]
+    tags: Optional[str] = Form(None), # Optional
+    file: Optional[UploadFile] = File(None), # Optional
+    external_url: Optional[str] = Form(None), # Optional
+    show_on_home: bool = Form(False), # Expect bool
+    category: str = Form(...),
+    current_user: dict = Depends(get_current_user) # Added current_user
 ):
-    show_on_home = show_on_home is not None
+    # Ensure employment_type is a list, even if only one item is submitted via form
+    # This might not be strictly necessary if using List[str] = Form(...) correctly handles single values.
+    if isinstance(employment_type, str):
+        employment_type_list = [emp.strip() for emp in employment_type.split(',') if emp.strip()]
+    elif isinstance(employment_type, list):
+        employment_type_list = [emp.strip() for emp in employment_type if emp.strip()]
+    else: # Fallback, should not happen with List[str]
+        employment_type_list = ['*']
+
 
     # 1. Salva il file fisicamente (se presente)
     docs_dir = BASE_AI_NEWS_DIR
     docs_dir.mkdir(parents=True, exist_ok=True)
-    filename = None
-    content_type = None
-    if file and file.filename:
-        dest = docs_dir / file.filename
-        async with aiofiles.open(dest, "wb") as out:
-            await out.write(await file.read())
-        filename = file.filename
-        content_type = file.content_type
+    filename_on_disk = None
+    file_content_type = None
 
-    employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
-    # 2. Salva il documento in Mongo
+    if file and file.filename:
+        # Basic sanitization, consider more robust methods
+        safe_filename = re.sub(r"[^\w\.-]", "_", file.filename)
+        dest = docs_dir / safe_filename
+        async with aiofiles.open(dest, "wb") as out:
+            content = await file.read() # Read file content
+            await out.write(content)   # Write to disk
+        filename_on_disk = safe_filename
+        file_content_type = file.content_type
+
+    # Se non c'è né file né link, errore
+    if not filename_on_disk and not (external_url and external_url.strip()):
+        # This should ideally be handled by client-side validation or a Pydantic model for the form.
+        # Returning an HTML error response that HTMX can display in a target.
+        # Or raise HTTPException if a JSON error response is preferred for API-like behavior.
+        raise HTTPException(status_code=400, detail="Devi caricare un file o inserire un link esterno.")
+
     db = request.app.state.db
-    doc = {
+    doc_data = {
         "title": title.strip(),
         "branch": branch.strip(),
-        "employment_type": employment_type_list,
-        "tags": [tag.strip() for tag in tags.split(",")] if tags else [],
-        "filename": filename,
-        "content_type": content_type,
+        "employment_type": employment_type_list, # Use the processed list
+        "tags": [tag.strip() for tag in tags.split(",")] if tags and tags.strip() else [],
+        "filename": filename_on_disk,
+        "content_type": file_content_type,
         "external_url": external_url.strip() if external_url else None,
         "uploaded_at": datetime.utcnow(),
         "category": category.strip(),
-        "stats": {
-            "likes": 0,
-            "comments": 0,
-            "replies": 0,
-            "total_interactions": 0
-        }
+        "show_on_home": show_on_home, # Store the boolean value
+        "stats": {"likes": 0, "comments": 0, "replies": 0, "total_interactions": 0, "views": 0}, # Ensure views is initialized
+        "author_id": current_user["_id"] # Store author ObjectId
     }
-    # Se non c'è né file né link, errore
-    if not filename and not external_url:
-        from fastapi import RequestValidationError
-        raise RequestValidationError([{"loc": ("file",), "msg": "Devi caricare un file o inserire un link esterno.", "type": "value_error"}])
-    result = await db.ai_news.insert_one(doc)
-    doc_id = result.inserted_id
+    result = await db.ai_news.insert_one(doc_data)
+    new_id = str(result.inserted_id)
 
-    # 3. Aggiorna home_highlights
-    if show_on_home:
-        await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": str(doc_id)},
-            {"$set": {
-                "type": "ai_news",
-                "object_id": str(doc_id),
-                "title": title.strip(),
-                "created_at": datetime.utcnow(),
-                "branch": branch.strip(),
-                "employment_type": employment_type_list
-            }},
-            upsert=True
-        )
-    else:
-        await db.home_highlights.delete_one({"type": "ai_news", "object_id": str(doc_id)})
-
-    # 4. Crea la notifica
+    # 4. Crea la notifica standard per i destinatari (non-admin)
     await crea_notifica(
         request=request,
-        tipo="ai_news",
-        titolo=title.strip(),
+        tipo="ai_news", # Specific type for AI News creation
+        titolo=f"Nuova AI News: {title.strip()}",
         branch=branch.strip(),
-        id_risorsa=str(doc_id),
-        employment_type=employment_type_list
+        id_risorsa=new_id,
+        employment_type=employment_type_list,
+        source_user_id=str(current_user["_id"]) # User who performed the action
     )
-    print(f"[DEBUG AI_NEWS] Notifica creata per doc_id={doc_id}, employment_type={employment_type_list}")
 
-    # 5. Invia WebSocket
-    try:
-        from app.ws_broadcast import broadcast_message
-        # Toast verde e badge
-        notifica = await db.notifiche.find_one({"id_risorsa": str(doc_id), "tipo": "ai_news"})
-        print(f"[DEBUG AI_NEWS] notifica trovata dopo insert: {notifica}")
-        if notifica:
-            payload = {
-                "type": "new_notification",
-                "data": {
-                    "id": str(notifica["_id"]),
-                    "message": f"È stato pubblicato un nuovo documento AI: {title.strip()}",
-                    "tipo": "ai_news",
-                    "source_user_id": str(request.state.user["_id"])
-                }
-            }
-            print(f"[DEBUG AI_NEWS] Invio payload WebSocket: {payload}")
-            await broadcast_message(json.dumps(payload))
-        # Aggiorna highlights home
-        if show_on_home:
-            try:
-                payload_highlight = {
-                    "type": "refresh_home_highlights",
-                    "data": {
-                        "branch": branch.strip(),
-                        "employment_type": employment_type_list
-                    }
-                }
-                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-            except Exception as e:
-                print(f"[WebSocket] Errore broadcast refresh_home_highlights (upload ai_news): {e}")
-    except Exception as e:
-        print("[WebSocket] Errore broadcast su creazione documento AI:", e)
+    # 5. Invia WebSocket toast per non-admin
+    payload_toast = create_action_notification_payload(
+        'create', # Action: 'create', 'update', 'delete'
+        'ai_news',   # Resource type for client-side handling
+        title.strip(), # Title of the resource
+        str(current_user["_id"]) # ID of the user who performed the action
+    )
+    await broadcast_message(
+        payload_toast,
+        branch=branch.strip(),
+        employment_type=employment_type_list,
+        exclude_user_id=str(current_user["_id"]) # Exclude the admin who created it
+    )
 
-    # Risposta con conferma admin e redirect
-    resp = PlainTextResponse(status_code=200)
-    # Prima mostra la conferma
+    # 6. Broadcast dell'evento generico per aggiornare UI (es. liste)
+    await broadcast_resource_event(
+        event="add", # "add", "update", "delete"
+        item_type="ai_news",
+        item_id=new_id,
+        user_id=str(current_user["_id"]),
+        data_filter_criteria={"branch": branch.strip(), "employment_type": employment_type_list} # For client-side filtering
+    )
+
+    # 7. Aggiorna home_highlights se show_on_home è True
+    if show_on_home:
+        await db.home_highlights.insert_one({
+            "type": "ai_news",
+            "object_id": new_id, # Store as string ID
+            "title": title.strip(),
+            "branch": branch.strip(),
+            "employment_type": employment_type_list,
+            "created_at": doc_data["uploaded_at"] # Use the same creation timestamp
+        })
+        # Broadcast refresh for home highlights
+        payload_highlight = {
+            "type": "refresh_home_highlights",
+            "data": {"branch": branch.strip(), "employment_type": employment_type_list}
+        }
+        await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
+
+    # 8. Risposta di conferma per l'admin con chiusura modale e redirect/refresh
+    resp = Response(status_code=200) # Empty 200 OK, triggers in headers
     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title.strip())
-    # Poi chiudi la modale e fai il redirect
-    resp.headers["HX-Trigger-After-Settle"] = json.dumps({
-        "closeModal": "true",
-        "redirect-to-ai-news": "/ai-news"
-    })
+
+    # HX-Trigger-After-Settle for actions after SweetAlert
+    # Option 1: Redirect to the main AI News page
+    # Option 2: Trigger a custom event to refresh the list on the current page
+    # For now, using redirect as it's simpler if list is on a different page or needs full reload.
+    # If list is on the same page and can be refreshed via HTMX, an event like 'refreshAINewsList' is better.
+    trigger_after_settle = {"closeModal": "true"}
+    # If AI News list is on /ai-news and we want to go there:
+    trigger_after_settle["redirect-to-ai-news"] = "/ai-news"
+    # Or, to refresh a list with id="ai-news-list-container" on the current page:
+    # trigger_after_settle["refreshTarget"] = "#ai-news-list-container"
+    # (Client would need JS to handle 'refreshTarget' or use built-in HTMX events from broadcast_resource_event)
+
+    resp.headers["HX-Trigger-After-Settle"] = json.dumps(trigger_after_settle)
     return resp
 
-@ai_news_router.get("/ai-news/upload", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
-async def show_upload_form(request: Request):
-    branches = ["HQE", "HQ ITALIA", "HQIA"]
-    types = ["TD", "TI", "AP", "CO"]
+@ai_news_router.get("/ai-news/new", response_class=HTMLResponse, dependencies=[Depends(require_admin)])
+async def new_ai_news_form(request: Request):
+    branches = ["*", "HQE", "HQ ITALIA", "HQIA"]
+    employment_types = ["*", "TD", "TI", "AP", "CO"]
+    template_name = "ai_news/new_partial.html" if request.headers.get("hx-request") == "true" else "ai_news/upload.html" # Fallback for non-HTMX
     return request.app.state.templates.TemplateResponse(
-        "ai_news/upload.html",
-        {"request": request, "branches": branches, "types": types}
+        template_name,
+        {
+            "request": request,
+            "branches": branches,
+            "employment_types": employment_types # Pass correct variable name
+        }
     )
 
 @ai_news_router.get(
@@ -190,24 +206,46 @@ async def show_upload_form(request: Request):
 async def edit_ai_news_form(
     request: Request,
     doc_id: str,
-    user = Depends(get_current_user)
+    user = Depends(get_current_user) # Renamed from current_user for consistency with template
 ):
     db = request.app.state.db
     doc = await db.ai_news.find_one({"_id": ObjectId(doc_id)})
     if not doc:
         raise HTTPException(404, "Documento AI non trovato")
-    # Verifica se il documento è in evidenza
-    highlight = await db.home_highlights.find_one({"type": "ai_news", "object_id": str(doc_id)})
-    doc = to_str_id(doc)
-    doc["show_on_home"] = bool(highlight)
+
+    # Convert ObjectIds to strings for template, including author_id if present
+    doc = to_str_id(doc) # Handles _id and uploaded_at
+
+    # Ensure employment_type is a list for the template's select multiple or logic
+    if isinstance(doc.get("employment_type"), str):
+        doc["employment_type"] = [doc["employment_type"]]
+    elif not doc.get("employment_type"): # If None or empty list from DB
+        doc["employment_type"] = ["*"] # Default to prevent errors in template if it expects a list
+
+    # show_on_home is already a boolean in the DB doc due to create/update logic
+    # No need to check highlights collection separately if it's stored on the doc.
+    # If it's NOT stored on the doc, then this is needed:
+    # highlight = await db.home_highlights.find_one({"type": "ai_news", "object_id": doc_id})
+    # doc["show_on_home"] = bool(highlight)
+
+    branches = ["*", "HQE", "HQ ITALIA", "HQIA"]
+    employment_types_options = ["*", "TD", "TI", "AP", "CO"] # Options for the select
+
     return request.app.state.templates.TemplateResponse(
-        "ai_news/edit_partial.html",
-        {"request": request, "d": doc, "user": user}
+        "ai_news/edit_partial.html", # This should be the modal partial
+        {
+            "request": request,
+            "d": doc, # Document data, 'd' as expected by current edit_partial
+            "user": user, # current_user passed as 'user'
+            "current_user": user, # Also pass as current_user for max compatibility
+            "branches": branches,
+            "employment_types": employment_types_options # Options for the dropdown
+        }
     )
 
 @ai_news_router.post(
     "/ai-news/{doc_id}/edit",
-    response_class=HTMLResponse,
+    response_class=HTMLResponse, # Will return the updated row partial
     dependencies=[Depends(require_admin)]
 )
 async def edit_ai_news_submit(
@@ -215,117 +253,131 @@ async def edit_ai_news_submit(
     doc_id: str,
     title: str = Form(...),
     branch: str = Form(...),
-    employment_type: str = Form("*"),
-    tags: str = Form(None),
+    employment_type: List[str] = Form(...), # Expecting a list
+    tags: Optional[str] = Form(None), # Optional
     category: str = Form(...),
-    show_on_home: str = Form(None)
+    show_on_home: bool = Form(False), # Expecting boolean
+    current_user: dict = Depends(get_current_user) # Added current_user
 ):
-    print("[DEBUG] show_on_home =", show_on_home)
-    show_on_home = show_on_home is not None
-    print("[DEBUG] Prima del controllo show_on_home, valore:", show_on_home)
-    if show_on_home:
-        print("[DEBUG] Entro nel ramo show_on_home True")
     db = request.app.state.db
-    employment_type_list = [employment_type] if isinstance(employment_type, str) else (employment_type or [])
+    object_id_doc = ObjectId(doc_id)
+
+    # Ensure employment_type is a list from form data
+    if isinstance(employment_type, str):
+        employment_type_list = [emp.strip() for emp in employment_type.split(',') if emp.strip()]
+    elif isinstance(employment_type, list):
+        employment_type_list = [emp.strip() for emp in employment_type if emp.strip()]
+    else: # Fallback
+        employment_type_list = ['*']
+
+    # Fetch the document *before* update to compare old/new recipient criteria if needed for notifications.
+    # For simplicity now, we'll notify based on new criteria.
+    # original_doc = await db.ai_news.find_one({"_id": object_id_doc})
+
+    update_data = {
+        "title": title.strip(),
+        "branch": branch.strip(),
+        "employment_type": employment_type_list,
+        "tags": [tag.strip() for tag in tags.split(",")] if tags and tags.strip() else [],
+        "category": category.strip(),
+        "show_on_home": show_on_home # Storing the boolean directly
+        # Not updating filename or external_url in edit form, these are fixed at creation.
+    }
     await db.ai_news.update_one(
-        {"_id": ObjectId(doc_id)},
-        {"$set": {
-            "title": title.strip(),
-            "branch": branch.strip(),
-            "employment_type": employment_type_list,
-            "tags": [tag.strip() for tag in tags.split(",")] if tags else [],
-            "category": category.strip()
-        }}
+        {"_id": object_id_doc},
+        {"$set": update_data}
     )
 
-    # Gestione home_highlights
+    # Create notification for non-admins (consider if recipients changed significantly)
+    # Using a generic "update" type notification for now.
+    await crea_notifica(
+        request=request,
+        tipo="ai_news_update", # Potentially a different type for updates
+        titolo=f"AI News aggiornata: {title.strip()}",
+        branch=branch.strip(),
+        id_risorsa=doc_id, # doc_id is already string
+        employment_type=employment_type_list,
+        source_user_id=str(current_user["_id"])
+    )
+
+    # WebSocket toast for non-admin users
+    payload_toast = create_action_notification_payload(
+        'update', # Action
+        'ai_news',   # Resource type
+        title.strip(), # Title
+        str(current_user["_id"]) # User ID
+    )
+    await broadcast_message(
+        payload_toast,
+        branch=branch.strip(),
+        employment_type=employment_type_list,
+        exclude_user_id=str(current_user["_id"])
+    )
+
+    # Home Highlights Management
+    # Fetch the *updated* document to get its creation date for highlights consistency
+    # (or pass original_doc.get("uploaded_at") if fetched before update)
+    updated_doc_for_highlight = await db.ai_news.find_one({"_id": object_id_doc})
+    created_at_for_highlight = updated_doc_for_highlight.get("uploaded_at", datetime.utcnow())
+
     if show_on_home:
         await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": str(doc_id)},
+            {"type": "ai_news", "object_id": doc_id}, # Use string doc_id for consistency if object_id is string
             {"$set": {
-                "type": "ai_news",
-                "object_id": str(doc_id),
-                "title": title.strip(),
-                "created_at": datetime.utcnow(),
-                "branch": branch.strip(),
-                "employment_type": employment_type_list
+                "type": "ai_news", "object_id": doc_id, "title": title.strip(),
+                "branch": branch.strip(), "employment_type": employment_type_list,
+                "created_at": created_at_for_highlight
             }},
             upsert=True
         )
-    else:
-        await db.home_highlights.delete_one({"type": "ai_news", "object_id": str(doc_id)})
+    else: # If not show_on_home, ensure it's removed from highlights
+        await db.home_highlights.delete_one({"type": "ai_news", "object_id": doc_id})
 
-    # Dopo l'update, crea una nuova notifica per i nuovi destinatari
-    await crea_notifica(
-        request=request,
-        tipo="ai_news",
-        titolo=title.strip(),
-        branch=branch.strip(),
-        id_risorsa=str(doc_id),
-        employment_type=employment_type_list
+    # Always broadcast highlight refresh to relevant users as criteria might have changed
+    # or item added/removed from home.
+    payload_highlight_refresh = {
+        "type": "refresh_home_highlights",
+        # Send new criteria. If item removed, users matching old criteria also need refresh.
+        # This might require fetching original_doc for old criteria if they could change.
+        # For now, simplifying to new criteria.
+        "data": {"branch": branch.strip(), "employment_type": employment_type_list}
+    }
+    await broadcast_message(payload_highlight_refresh, branch=branch.strip(), employment_type=employment_type_list)
+
+
+    # WebSocket event for UI update (e.g., refreshing the specific row in a list)
+    await broadcast_resource_event(
+        event="update",
+        item_type="ai_news",
+        item_id=doc_id, # doc_id is already string
+        user_id=str(current_user["_id"]),
+        # Pass data that might be needed by client to update the row, or client refetches
+        data_filter_criteria={"branch": branch.strip(), "employment_type": employment_type_list}
     )
-    # Invia WebSocket
-    try:
-        from app.ws_broadcast import broadcast_message
-        # Aggiorna lista documenti
-        payload_update = {
-            "type": "update_ai_news",
-            "data": {
-                "id": str(doc_id),
-                "titolo": title.strip(),
-                "branch": branch.strip(),
-                "consequence": "Il documento AI è stato modificato. I destinatari potrebbero essere cambiati."
-            }
-        }
-        await broadcast_message(json.dumps(payload_update))
-        # Aggiorna highlights home
-        if show_on_home:
-            try:
-                payload_highlight = {
-                    "type": "refresh_home_highlights",
-                    "data": {
-                        "branch": branch.strip(),
-                        "employment_type": employment_type_list
-                    }
-                }
-                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-            except Exception as e:
-                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news show_on_home): {e}")
-        else: # Se show_on_home è false, e il doc POTREBBE essere stato in home
-            try:
-                # Invia refresh ai destinatari che POTEVANO vederlo
-                payload_highlight = {
-                    "type": "refresh_home_highlights",
-                    "data": { # Usa i criteri attuali del documento
-                        "branch": branch.strip(),
-                        "employment_type": employment_type_list
-                    }
-                }
-                await broadcast_message(payload_highlight, branch=branch.strip(), employment_type=employment_type_list)
-            except Exception as e:
-                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news not show_on_home): {e}")
 
-        # Toast giallo e badge (a tutti)
-        notifica = await db.notifiche.find_one({"id_risorsa": str(doc_id), "tipo": "ai_news"})
-        if notifica:
-            payload_toast = {
-                "type": "new_notification",
-                "data": {
-                    "id": str(notifica["_id"]),
-                    "message": f"Il documento AI è stato modificato: {title.strip()}",
-                    "tipo": "ai_news",
-                    "source_user_id": str(request.state.user["_id"])
-                }
-            }
-            await broadcast_message(json.dumps(payload_toast))
-    except Exception as e:
-        print("[WebSocket] Errore broadcast su modifica documento AI:", e)
-    updated = await db.ai_news.find_one({"_id": ObjectId(doc_id)})
+    # Return the updated row partial
+    updated_doc_for_template = await db.ai_news.find_one({"_id": object_id_doc})
+    updated_doc_for_template = to_str_id(updated_doc_for_template.copy()) # Ensure all IDs are strings for template
+
+    # Ensure employment_type is a list for the template, even if single from DB after update
+    if isinstance(updated_doc_for_template.get("employment_type"), str):
+         updated_doc_for_template["employment_type"] = [updated_doc_for_template["employment_type"]]
+    elif not updated_doc_for_template.get("employment_type"): # Handle None or empty list
+         updated_doc_for_template["employment_type"] = ["*"]
+
+
     resp = request.app.state.templates.TemplateResponse(
         "ai_news/row_partial.html",
-        {"request": request, "d": updated, "user": request.state.user}
+        {"request": request, "d": updated_doc_for_template, "current_user": current_user, "user": current_user}
     )
-    resp.headers["HX-Trigger"] = "closeModal"
+
+    # Admin confirmation + close modal trigger
+    admin_confirm_trigger = create_admin_confirmation_trigger('update', title.strip())
+    # Combine with closeModal: parse the JSON, add key, then stringify
+    trigger_data = json.loads(admin_confirm_trigger) # Assuming it's a JSON string like {"showAdminConfirmation": {...}}
+    trigger_data["closeModal"] = "true" # Add closeModal to the same trigger object
+    resp.headers["HX-Trigger"] = json.dumps(trigger_data)
+
     return resp
 
 @ai_news_router.get("/ai-news/{doc_id}/download")  # Modificato da /ai-news/{doc_id}
@@ -413,76 +465,83 @@ async def list_ai_news(
         }
     )
 
-@ai_news_router.delete("/ai-news/{doc_id}")
+@ai_news_router.delete("/ai-news/{doc_id}", response_class=Response) # Ensure response_class=Response for header manipulation
 async def delete_ai_news(
     request: Request, 
-    doc_id: str,
+    doc_id: str, # doc_id is a string from path
     current_user: dict = Depends(get_current_user)
 ):
     db = request.app.state.db
     
-    # Recupera info documento prima di eliminare
-    doc = await db.ai_news.find_one({"_id": ObjectId(doc_id)})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Documento AI non trovato")
-    
-    # Elimina il documento
-    await db.ai_news.delete_one({"_id": ObjectId(doc_id) if ObjectId.is_valid(doc_id) else doc_id})
-    
-    # Rimuovi eventuale highlight
     try:
-        obj_id = ObjectId(doc_id)
+        object_id_to_delete = ObjectId(doc_id)
     except Exception:
-        obj_id = doc_id
-    await db.home_highlights.delete_many({
-        "type": "ai_news",
-        "$or": [
-            {"object_id": obj_id},
-            {"object_id": str(doc_id)}
-        ]
-    })
+        raise HTTPException(status_code=400, detail="ID documento non valido.")
 
-    # 1. Notifica WebSocket ai destinatari (tutti tranne l'admin)
-    payload = create_action_notification_payload('delete', 'ai_news', doc.get('title', ''), str(current_user["_id"]))
+    doc_to_delete = await db.ai_news.find_one({"_id": object_id_to_delete})
+    if not doc_to_delete:
+        raise HTTPException(status_code=404, detail="Documento AI non trovato.")
+
+    title = doc_to_delete.get('title', 'Documento AI sconosciuto')
+    branch = doc_to_delete.get('branch', '*')
+    # Ensure employment_type is a list for broadcast
+    employment_type_from_doc = doc_to_delete.get('employment_type', ['*'])
+    if isinstance(employment_type_from_doc, str): # Defensive check
+        employment_type_from_doc = [employment_type_from_doc]
+
+
+    # Delete physical file if it exists and filename is present
+    if doc_to_delete.get("filename"):
+        file_path = BASE_AI_NEWS_DIR / doc_to_delete["filename"]
+        if file_path.exists():
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"Error deleting file {file_path}: {e}") # Log error but continue deletion
+
+    # Delete the document from DB
+    await db.ai_news.delete_one({"_id": object_id_to_delete})
+
+    # Remove from home_highlights (use string doc_id as object_id is stored as string there)
+    await db.home_highlights.delete_one({"type": "ai_news", "object_id": doc_id})
+
+    # 1. WebSocket for non-admin toast notification
+    payload_toast = create_action_notification_payload(
+        'delete', # action
+        'ai_news',   # resource_type
+        title,    # resource_title
+        str(current_user["_id"]) # user_id
+    )
     await broadcast_message(
-        payload,
-        branch=doc.get('branch', '*'),
-        employment_type=doc.get('employment_type', ['*']),
+        payload_toast,
+        branch=branch, # Use branch from the deleted doc
+        employment_type=employment_type_from_doc, # Use employment_type from the deleted doc
         exclude_user_id=str(current_user["_id"])
     )
 
-    # 2. Aggiornamento highlights
-    was_on_home = doc.get("show_on_home", False) # Controlla se era in home PRIMA di eliminare da home_highlights
-
-    # La rimozione da db.home_highlights è già gestita sopra.
-    # Ora invia il broadcast mirato se necessario.
-    if was_on_home:
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": doc.get("branch", "*"),
-                    "employment_type": doc.get("employment_type", ["*"])
-                }
-            }
-            await broadcast_message(
-                payload_highlight,
-                branch=doc.get("branch", "*"),
-                employment_type=doc.get("employment_type", ["*"])
-            )
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete ai_news): {e}")
-
+    # 2. WebSocket for UI update (list refresh / row removal)
     await broadcast_resource_event(
         event="delete",
         item_type="ai_news",
-        item_id=str(doc_id),
-        user_id=str(current_user["_id"])
+        item_id=doc_id, # doc_id is already a string here
+        user_id=str(current_user["_id"]),
+        # Pass criteria of the deleted item so clients can filter if necessary
+        data_filter_criteria={"branch": branch, "employment_type": employment_type_from_doc}
     )
 
-    # 3. Conferma per l'admin
-    resp = Response(status_code=200)
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', doc.get('title', ''))
+    # 3. Refresh highlights if it was on home (or just always refresh for relevant users)
+    # No need to check was_on_home, just send refresh to those who might have seen it based on its criteria
+    payload_highlight_refresh = {
+        "type": "refresh_home_highlights",
+        "data": {"branch": branch, "employment_type": employment_type_from_doc}
+    }
+    await broadcast_message(payload_highlight_refresh, branch=branch, employment_type=employment_type_from_doc)
+
+    # 4. Admin confirmation via HX-Trigger
+    resp = Response(status_code=200) # HTMX expects 200 for swap, even on delete if hx-target is used for row removal
+    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', title)
+    # The row will be removed by `hx-swap="delete"` on the client side (if form has hx-target)
+    # or by JS handling the broadcast_resource_event.
     return resp
 
 @ai_news_router.get("/api/ai-news")
@@ -1329,202 +1388,3 @@ async def view_ai_news(
             "highlight_news_id": news_id
         }
     )
-
-@ai_news_router.post("/upload", dependencies=[Depends(require_admin)])
-async def upload_ai_news(
-    request: Request,
-    title: str = Form(...),
-    file: UploadFile = File(...),
-    branch: str = Form("*"),
-    employment_type: list[str] = Form(["*"]),
-    show_on_home: bool = Form(False),
-    current_user: dict = Depends(get_current_user)
-):
-    db = request.app.state.db
-    
-    # Salvataggio del file
-    file_path = os.path.join("media", "docs", "ai_news", file.filename)
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    # Inserimento nel database
-    ai_news_data = {
-        "title": title,
-        "filename": file.filename,
-        "branch": branch,
-        "employment_type": employment_type,
-        "show_on_home": show_on_home,
-        "created_at": datetime.utcnow(),
-        "comments": []
-    }
-    result = await db.ai_news.insert_one(ai_news_data)
-    new_id = str(result.inserted_id)
-
-    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha caricato la AI news
-    payload = create_action_notification_payload('create', 'ai_news', title)
-    await broadcast_message(
-        payload,
-        branch=branch,
-        employment_type=employment_type,
-        exclude_user_id=str(current_user["_id"])
-    )
-
-    # 2. Aggiornamento highlights (se necessario)
-    if show_on_home:
-        # Inserisci in home_highlights (mancava questa logica qui)
-        await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": new_id},
-            {"$set": {
-                "type": "ai_news", "object_id": new_id, "title": title,
-                "branch": branch, "employment_type": employment_type, # Assicurati che employment_type sia una lista
-                "created_at": datetime.utcnow()
-            }},
-            upsert=True
-        )
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": branch,
-                    "employment_type": employment_type # employment_type è già una lista qui
-                }
-            }
-            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (upload ai_news global): {e}")
-
-        # L'evento broadcast_resource_event può rimanere se serve per altri scopi UI
-        await broadcast_resource_event("add", item_type="ai_news", item_id=new_id, user_id=str(current_user["_id"]))
-
-    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
-    resp = Response(status_code=200)
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title)
-    return resp
-
-@ai_news_router.post("/{ai_news_id}/edit", dependencies=[Depends(require_admin)])
-async def edit_ai_news(
-    request: Request,
-    ai_news_id: str,
-    title: str = Form(...),
-    branch: str = Form(...),
-    employment_type: list[str] = Form(...),
-    show_on_home: bool = Form(False),
-    current_user: dict = Depends(get_current_user)
-):
-    db = request.app.state.db
-    await db.ai_news.update_one(
-        {"_id": ObjectId(ai_news_id)},
-        {"$set": {
-            "title": title,
-            "branch": branch,
-            "employment_type": employment_type,
-            "show_on_home": show_on_home
-        }}
-    )
-
-    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha modificato la AI news
-    payload = create_action_notification_payload('update', 'ai_news', title)
-    await broadcast_message(
-        payload,
-        branch=branch,
-        employment_type=employment_type,
-        exclude_user_id=str(current_user["_id"])
-    )
-
-    # 2. Aggiornamento highlights
-    # Gestione home_highlights e broadcast mirato
-    db_ai_news = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)}) # Recupera per created_at
-    if show_on_home:
-        await db.home_highlights.update_one(
-            {"type": "ai_news", "object_id": ai_news_id},
-            {"$set": {
-                "type": "ai_news", "object_id": ai_news_id, "title": title,
-                "branch": branch, "employment_type": employment_type, # Assicurati che sia lista
-                "created_at": db_ai_news.get("created_at", datetime.utcnow())
-            }},
-            upsert=True
-        )
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {"branch": branch, "employment_type": employment_type}
-            }
-            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news global show_on_home): {e}")
-    else:
-        delete_result = await db.home_highlights.delete_one({"type": "ai_news", "object_id": ai_news_id})
-        if delete_result.deleted_count > 0:
-            try:
-                payload_highlight = {
-                    "type": "refresh_home_highlights",
-                    "data": {"branch": branch, "employment_type": employment_type}
-                }
-                await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
-            except Exception as e:
-                print(f"[WebSocket] Errore broadcast refresh_home_highlights (edit ai_news global not show_on_home): {e}")
-
-    await broadcast_resource_event("update", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
-
-    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
-    updated_ai_news = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)})
-    resp = request.app.state.templates.TemplateResponse(
-        "ai_news/row_partial.html",
-        {"request": request, "ai_news": updated_ai_news, "current_user": current_user}
-    )
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title)
-    return resp
-
-@ai_news_router.delete("/{ai_news_id}", dependencies=[Depends(require_admin)])
-async def delete_ai_news(request: Request, ai_news_id: str, current_user: dict = Depends(get_current_user)):
-    db = request.app.state.db
-    ai_news_to_delete = await db.ai_news.find_one({"_id": ObjectId(ai_news_id)})
-    if not ai_news_to_delete:
-        raise HTTPException(status_code=404)
-
-    title = ai_news_to_delete['title']
-    branch = ai_news_to_delete.get('branch', '*')
-    employment_type = ai_news_to_delete.get('employment_type', ['*'])
-
-    # Rimozione del file fisico
-    file_path = os.path.join("media", "docs", "ai_news", ai_news_to_delete['filename'])
-    if os.path.exists(file_path):
-        os.remove(file_path)
-
-    await db.ai_news.delete_one({"_id": ObjectId(ai_news_id)})
-
-    # 1. Notifica WebSocket ai destinatari, ESCLUDENDO l'admin che ha eliminato la AI news
-    payload = create_action_notification_payload('delete', 'ai_news', title)
-    await broadcast_message(
-        payload,
-        branch=branch,
-        employment_type=employment_type,
-        exclude_user_id=str(current_user["_id"])
-    )
-
-    # 2. Aggiornamento highlights
-    was_on_home = ai_news_to_delete.get("show_on_home", False)
-    # La rimozione da home_highlights è implicita se non viene ricreato.
-    # Per coerenza, esplicitiamo la rimozione da home_highlights.
-    await db.home_highlights.delete_one({"type": "ai_news", "object_id": ObjectId(ai_news_id)})
-
-    if was_on_home:
-        try:
-            payload_highlight = {
-                "type": "refresh_home_highlights",
-                "data": {
-                    "branch": branch, # branch della ai_news eliminata
-                    "employment_type": employment_type # employment_type della ai_news eliminata
-                }
-            }
-            await broadcast_message(payload_highlight, branch=branch, employment_type=employment_type)
-        except Exception as e:
-            print(f"[WebSocket] Errore broadcast refresh_home_highlights (delete ai_news global): {e}")
-
-    await broadcast_resource_event("delete", item_type="ai_news", item_id=ai_news_id, user_id=str(current_user["_id"]))
-
-    # 3. Risposta di conferma SOLO per l'admin via HX-Trigger
-    resp = Response(status_code=200)
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('delete', title)
-    return resp

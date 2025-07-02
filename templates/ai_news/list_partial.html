@@ -1,7 +1,6 @@
 <div id="ai-news-list" class="grid gap-4 mt-6"
-     hx-get="/ai-news/list/partial"
-     hx-trigger="update_ai_news from:body"
-     hx-swap="outerHTML">
+     hx-get="/ai-news/list/partial" {# This defines how the element can be refreshed if targeted by HTMX #}
+     hx-swap="outerHTML"> {# The WebSocket handler will now trigger the refresh using this URL and swap method #}
   <ul class="list-none p-0">
     {% for d in ai_news %}
       <li>
