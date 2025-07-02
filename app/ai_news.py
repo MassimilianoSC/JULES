@@ -170,16 +170,9 @@ async def upload_ai_news(
     resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title.strip())
 
     # HX-Trigger-After-Settle for actions after SweetAlert
-    # Option 1: Redirect to the main AI News page
-    # Option 2: Trigger a custom event to refresh the list on the current page
-    # For now, using redirect as it's simpler if list is on a different page or needs full reload.
-    # If list is on the same page and can be refreshed via HTMX, an event like 'refreshAINewsList' is better.
-    trigger_after_settle = {"closeModal": "true"}
-    # If AI News list is on /ai-news and we want to go there:
-    trigger_after_settle["redirect-to-ai-news"] = "/ai-news"
-    # Or, to refresh a list with id="ai-news-list-container" on the current page:
-    # trigger_after_settle["refreshTarget"] = "#ai-news-list-container"
-    # (Client would need JS to handle 'refreshTarget' or use built-in HTMX events from broadcast_resource_event)
+    # Since this is a full page form submission, we don't need to close a modal.
+    # We just redirect. The admin confirmation (SweetAlert) will show before the redirect.
+    trigger_after_settle = {"redirect-to-ai-news": "/ai-news"}
 
     resp.headers["HX-Trigger-After-Settle"] = json.dumps(trigger_after_settle)
     return resp
@@ -188,13 +181,13 @@ async def upload_ai_news(
 async def new_ai_news_form(request: Request):
     branches = ["*", "HQE", "HQ ITALIA", "HQIA"]
     employment_types = ["*", "TD", "TI", "AP", "CO"]
-    template_name = "ai_news/new_partial.html" if request.headers.get("hx-request") == "true" else "ai_news/upload.html" # Fallback for non-HTMX
+    # Always serve the full page template for creation
     return request.app.state.templates.TemplateResponse(
-        template_name,
+        "ai_news/upload.html",
         {
             "request": request,
             "branches": branches,
-            "employment_types": employment_types # Pass correct variable name
+            "employment_types": employment_types
         }
     )
 
