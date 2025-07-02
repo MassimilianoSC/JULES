@@ -15,7 +15,12 @@ function saveDebugLog(message) {
 }
 
 eventBus.on('new_notification', (message) => {
-  const { title, body, level, source_user_id } = message.data || {};
+  if (!message || !message.data) {
+    saveDebugLog('[WS] Ricevuto messaggio "new_notification" invalido o senza dati. Messaggio: ' + JSON.stringify(message));
+    return;
+  }
+
+  const { title, body, level, source_user_id } = message.data; // Rimosso || {} perché il controllo sopra garantisce message.data
   const currentUserId = document.body.dataset.userId;
   const currentUserRole = document.body.dataset.userRole;
 
