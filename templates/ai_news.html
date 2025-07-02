@@ -18,7 +18,7 @@
       <div class="flex justify-between items-center mb-6">
         <h1 class="text-2xl font-bold">News AI</h1>
         {% if user.role == 'admin' %}
-        <a href="/ai-news/upload" class="btn btn-primary">
+        <a href="/ai-news/new" class="btn btn-primary"> {# Corrected href to point to the new GET route #}
           <i class="fas fa-plus mr-2"></i>Nuova News
         </a>
         {% endif %}
