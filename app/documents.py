@@ -322,7 +322,11 @@ async def edit_document_submit(
         "documents/row_partial.html",
         {"request": request, "d": updated, "user": current_user}
     )
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('update', title.strip())
+
+    admin_confirmation_payload = json.loads(create_admin_confirmation_trigger('update', title.strip()))
+    admin_confirmation_payload["closeModal"] = True # Aggiungiamo closeModal per il gestore globale in ui.js
+    resp.headers["HX-Trigger"] = json.dumps(admin_confirmation_payload)
+
     print(f"[DEBUG] Headers risposta: {dict(resp.headers)}")
     
     return resp

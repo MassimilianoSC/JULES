@@ -15,55 +15,22 @@
 
 {% block scripts %}
 {{ super() }}
-<script type="module">
-  import { showToast } from '/static/js/features/notifications/toast.js';
-  import { eventBus } from '/static/js/core/event-bus.js';
-
-  /* Gestione eliminazione con conferma e notifica */
-  document.getElementById('news-list')?.addEventListener('click', async e => {
-    const btn = e.target.closest('[data-delete]');
-    if (!btn) return;
-
-    // Mostra conferma SweetAlert2
-    const result = await Swal.fire({
-      title: 'Sei sicuro?',
-      text: 'Questa azione non può essere annullata',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Sì, elimina',
-      cancelButtonText: 'Annulla',
-      reverseButtons: true
-    });
-
-    if (!result.isConfirmed) return;
-
-    const newsId = btn.dataset.delete.split('/')[2];
-    const form = btn.closest('form');
-    
-    // Submit del form HTMX
-    form.requestSubmit();
-    
-    // Emetti evento per notificare gli altri utenti
-    eventBus.emit('resource/delete', {
-      type: 'news',
-      id: newsId
-    });
-  });
-
-  // Ascolta eventi HTMX per mostrare toast di conferma
-  document.body.addEventListener('htmx:afterRequest', (evt) => {
-    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/news/')) {
-      const trigger = evt.detail.xhr.getResponseHeader('HX-Trigger');
-      if (trigger && !trigger.includes('showAdminConfirmation')) {
-        showToast({
-          title: 'Operazione completata',
-          body: 'La news è stata aggiornata con successo',
-          type: 'success'
-        });
-      }
-    }
+<!-- Script inline rimosso. La gestione dell'eliminazione è in news-delete.js -->
+<!-- Le conferme admin sono gestite globalmente da ui.js -->
+<!-- Il badge delle notifiche viene aggiornato tramite l'evento notifications.refresh -->
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    fetch('/notifiche/mark-read/news', {method: 'POST', credentials: 'include'})
+      .then(() => {
+        if (window.htmx) {
+          htmx.trigger(document.body, 'notifications.refresh');
+          // Se esiste un badge specifico per le news, triggerare anche quello
+          // htmx.trigger(document.body, 'refreshNewsBadgeEvent');
+        }
+      });
   });
 </script>
+<script type="module" src="{{ url_for('static', path='js/features/news-delete.js') }}"></script>
 {% endblock %}
 
 

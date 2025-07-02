@@ -58,9 +58,13 @@
         class="inline-flex items-center gap-1 rounded-lg bg-blue-100 px-4 py-2 text-sm font-medium text-blue-800 shadow hover:bg-blue-200 transition">
         Modifica
       </button>
-      <form class="inline-block" hx-delete="/documents/{{ d._id }}" hx-swap="outerHTML" hx-target="#document-{{ d._id }}">
-        <button type="button" onclick="showDelete(this)"
-          class="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
+      <form class="inline-block"
+            hx-delete="/documents/{{ d._id }}"
+            hx-target="closest #document-{{ d._id }}" {# Manteniamo hx-target per fallback se WS fallisce per l'admin #}
+            hx-swap="outerHTML">
+        <button type="button"
+                data-document-name="{{ d.title }}"
+                class="btn-delete-document inline-flex items-center gap-1 rounded-lg bg-rose-100 px-4 py-2 text-sm font-medium text-rose-700 shadow hover:bg-rose-200 transition">
           Elimina
         </button>
       </form>
@@ -68,10 +72,12 @@
   </div>
 </div>
 
+{# Lo script inline è stato rimosso o ridotto. #}
+{# La gestione dell'eliminazione è in static/js/features/document-delete.js #}
+{# La gestione dei toast/conferme admin è globale o gestita dal backend. #}
+{# Lo script per trackView rimane se necessario per altre funzionalità AI News. #}
 <script type="module">
   import { trackView } from '/static/js/features/ai-news/analytics/views.js';
-  import { showToast } from '/static/js/features/notifications/toast.js';
-  import { eventBus } from '/static/js/core/event-bus.js';
   
   document.addEventListener('click', e => {
     const previewLink = e.target.closest('[data-ai-preview]');
@@ -85,20 +91,6 @@
     if (downloadLink) {
       const newsId = downloadLink.getAttribute('data-ai-news-id');
       trackView(newsId, 'download');
-    }
-  });
-
-  // Ascolta eventi HTMX per mostrare toast di conferma
-  document.body.addEventListener('htmx:afterRequest', (evt) => {
-    if (evt.detail.successful && evt.detail.pathInfo.requestPath.includes('/documents/')) {
-      // Non mostriamo il toast qui perché verrà gestito dal trigger showAdminConfirmation
-      const docId = evt.detail.pathInfo.requestPath.split('/').pop();
-      if (evt.detail.requestConfig.method === 'DELETE') {
-        eventBus.emit('resource/delete', {
-          type: 'document',
-          id: docId
-        });
-      }
     }
   });
 </script>

@@ -262,15 +262,13 @@ async def edit_contact_submit(request: Request, contact_id: str, user: dict = De
         {"request": request, "contact": updated, "current_user": user}
     )
 
-    admin_toast = {
-        "title": "Contatto Modificato",
-        "body": f"Hai aggiornato correttamente «{name}».",
-        "type": "success"
-    }
-    resp.headers["HX-Trigger"] = json.dumps({
-        "closeModal": True,
-        "showToast": admin_toast
-    })
+    # Allineamento con il sistema di conferma admin dei Link
+    # Usiamo create_admin_confirmation_trigger invece di un toast per l'admin.
+    # Aggiungiamo closeModal direttamente nel payload del trigger gestito globalmente.
+    admin_confirmation_payload = json.loads(create_admin_confirmation_trigger('update', name))
+    admin_confirmation_payload["closeModal"] = True # Aggiungiamo closeModal qui
+
+    resp.headers["HX-Trigger"] = json.dumps(admin_confirmation_payload)
 
     return resp
 
