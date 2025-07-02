@@ -98,7 +98,16 @@ async def broadcast_message(
         logger.debug("[WS] Nessuna connessione attiva")
         return
 
+    if not payload:
+        logger.error("[WS] Tentativo di invio payload vuoto, annullamento broadcast.")
+        return
+
     message_to_send = json.dumps(payload, ensure_ascii=False)
+
+    if not message_to_send or message_to_send == "{}": # Aggiunto controllo per stringa JSON vuota
+        logger.error(f"[WS] Messaggio serializzato vuoto o payload originale vuoto ({payload}), annullamento broadcast.")
+        return
+
     recipients = []
     
     logger.debug(f"[WS] Preparazione broadcast:")
