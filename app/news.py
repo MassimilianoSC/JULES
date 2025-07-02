@@ -368,27 +368,28 @@ async def edit_news_submit(
         print(f"[WebSocket] Errore broadcast news_ticker_update: {e}")
     # --- FINE AGGIUNTA ---
 
-    # Toast di notifica
-    payload_toast = {
-        "type": "new_notification",
-        "data": {
-            "id": str(news_id),
-            "message": f"È stata aggiunta una nuova news: {title.strip()}",
-            "tipo": "news",
-            "source_user_id": str(current_user["_id"])
-        }
-    }
-    await broadcast_message(payload_toast, branch=branch, employment_type=employment_type_list, exclude_user_id=str(current_user["_id"]))
+    # Toast di notifica (create_action_notification_payload gestisce già questo tipo di toast per gli utenti)
+    # payload_toast = {
+    #     "type": "new_notification",
+    #     "data": {
+    #         "id": str(news_id),
+    #         "message": f"È stata aggiunta una nuova news: {title.strip()}", # Questo messaggio è per la creazione, non modifica
+    #         "tipo": "news",
+    #         "source_user_id": str(current_user["_id"])
+    #     }
+    # }
+    # await broadcast_message(payload_toast, branch=branch, employment_type=employment_type_list, exclude_user_id=str(current_user["_id"]))
 
-    # Risposta con conferma admin e redirect
-    resp = Response(status_code=204)
-    # Prima mostra la conferma
-    resp.headers["HX-Trigger"] = create_admin_confirmation_trigger('create', title.strip())
-    # Poi chiudi la modale e fai il redirect
-    resp.headers["HX-Trigger-After-Settle"] = json.dumps({
-        "closeModal": "true",
-        "redirect-to-news": "/news"
-    })
+    # Risposta allineata: restituisce il partial della riga e usa HX-Trigger per conferma + closeModal
+    resp = request.app.state.templates.TemplateResponse(
+        "news/news_row_partial.html", # Assicurarsi che questo template possa renderizzare 'n' correttamente
+        {"request": request, "n": updated, "user": current_user} # Passare current_user per coerenza
+    )
+
+    admin_confirmation_payload = json.loads(create_admin_confirmation_trigger('update', title.strip()))
+    admin_confirmation_payload["closeModal"] = True
+    resp.headers["HX-Trigger"] = json.dumps(admin_confirmation_payload)
+
     return resp
 
 @news_router.get("/news/new", response_class=HTMLResponse)

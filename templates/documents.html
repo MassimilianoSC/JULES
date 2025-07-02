@@ -13,14 +13,20 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     fetch('/notifiche/mark-read/documento', {method: 'POST', credentials: 'include'})
       .then(() => {
         if (window.htmx) {
+          // Questo trigger aggiornerà il badge generale e l'elenco delle notifiche inline
           htmx.trigger(document.body, 'notifications.refresh');
+          // Potrebbe essere necessario un trigger specifico se il badge dei documenti è separato
+          // htmx.trigger(document.body, 'refreshDocumentiBadgeEvent');
         }
       });
   });
 </script>
+<!-- Importazione del gestore per l'eliminazione dei documenti -->
+<script type="module" src="{{ url_for('static', path='js/features/document-delete.js') }}"></script>
 {% endblock %}
