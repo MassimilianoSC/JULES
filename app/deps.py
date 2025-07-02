@@ -48,6 +48,35 @@ async def get_current_user(request: Request):
 
     # tutto ok → salva l'utente nello state e restituiscilo
     request.state.user = user
+
+    # ─── CONTEGGIO NOTIFICHE NON LETTE (AGGIUNTO) ───────────────────
+    db = request.app.state.db
+    employment_type = user.get("employment_type")
+    branch = user.get("branch")
+
+    # Query per contare le notifiche non lette di tipo "link"
+    emp_type_conditions = [
+        {"employment_type": {"$in": ["*"]}},
+        {"employment_type": {"$exists": False}},
+        {"employment_type": []}
+    ]
+    if employment_type:
+        emp_type_conditions.append({"employment_type": {"$in": [employment_type]}})
+
+    q_links = {
+        "tipo": "link",
+        "branch": {"$in": ["*", branch]},
+        "letta_da": {"$ne": str(user["_id"])},
+        "$or": emp_type_conditions
+    }
+    unread_links_count = await db.notifiche.count_documents(q_links)
+
+    # Inizializza request.state.unread_counts se non esiste
+    if not hasattr(request.state, 'unread_counts'):
+        request.state.unread_counts = {}
+    request.state.unread_counts["link"] = unread_links_count
+    # ───────────────────────────────────────────────────────────────────
+
     return user
 
 async def require_admin(
