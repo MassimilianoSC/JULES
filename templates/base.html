@@ -2,6 +2,9 @@
 {% set pinned_json = request.session.get('pinned_items', []) | tojson %}
 {% set ts = datetime.utcnow().timestamp() %}
 
+{# Conteggio iniziale delle notifiche non lette per i link #}
+{% set unread_links_count = request.state.unread_counts.get('link', 0) if hasattr(request.state, 'unread_counts') and request.state.unread_counts else 0 %}
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -161,7 +164,9 @@
                 <path d="M12 2a15.3 15.3 0 0 0 0 20" stroke="#f87171" stroke-width="2"/>
               </svg>
               <span class="text-[13px] leading-tight font-medium text-center">Link</span>
-               {% include "components/nav_links_badge.html" %}
+               {% with unread_links_count=unread_links_count %}
+                 {% include "components/nav_links_badge.html" %}
+               {% endwith %}
           </a>
           {% endif %}
           <a href="/organigramma" class="group flex flex-col items-center text-blue-800 hover:text-blue-600 flex-1 min-w-[64px]">
