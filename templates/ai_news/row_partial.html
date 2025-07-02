@@ -106,13 +106,13 @@
         </button>
       </span>
 
-      <span id="comments-{{ d._id }}" class="flex items-center gap-1 group cursor-pointer comments-toggle" data-open="false" data-news-id="{{ d._id }}">
+      <button type="button" aria-label="Toggle comments" class="flex items-center gap-1 group cursor-pointer comments-toggle" data-open="false" data-news-id="{{ d._id }}">
         <svg class="w-4 h-4 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
         </svg>
-        <span class="stats-count loading-placeholder">{{ d.stats.comments if d.stats else 0 }}</span>
+        <span id="comments-count-{{ d._id }}" class="stats-count loading-placeholder">{{ d.stats.comments if d.stats else 0 }}</span>
         <span class="hidden md:inline">commenti</span>
-      </span>
+      </button>
     </div>
 
     <!-- Pulsante Condividi -->
@@ -163,7 +163,7 @@
     </div>
 
     <!-- Lista Commenti -->
-    <div class="comments-container mt-4 max-w-2xl mx-auto">
+    <div id="comments-container-{{ d._id }}" class="comments-container mt-4 max-w-2xl mx-auto"> {# Added ID here #}
       <div id="comments-list-{{ d._id }}" class="space-y-4">
         {% for comment in d.comments %}
         <div id="comment-{{ comment._id }}" class="bg-white rounded-lg shadow p-4">

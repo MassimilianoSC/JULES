@@ -35,10 +35,46 @@ BASE_AI_NEWS_DIR = Path("media/docs/ai_news")   # cartella radice documenti AI
 DEBOUNCE_HOURS = 24  # tempo minimo fra due view validanti
 
 def to_str_id(doc: dict) -> dict:
-    """Converte l'_id Mongo in stringa per i template Jinja."""
-    doc["_id"] = str(doc["_id"])
-    if "uploaded_at" in doc and isinstance(doc["uploaded_at"], datetime):
-        doc["uploaded_at"] = doc["uploaded_at"].date().isoformat()
+    """Converte ObjectId fields in stringa per i template Jinja o JSON risposte."""
+    if not doc: return doc # Handle None case
+
+    # Convert _id first as it's common
+    if "_id" in doc and isinstance(doc.get("_id"), ObjectId):
+        doc["_id"] = str(doc["_id"])
+
+    # List of fields that might contain an ObjectId and should be converted to string
+    fields_to_convert = [
+        "author_id", "user_id", "news_id", "parent_id",
+        "comment_id", "reply_id" # Add any other relevant ObjectId fields used in your app
+    ]
+    for field in fields_to_convert:
+        if field in doc and isinstance(doc.get(field), ObjectId):
+            doc[field] = str(doc[field])
+
+    # Format specific datetime fields if they exist
+    datetime_fields_to_format = {
+        "uploaded_at": lambda dt: dt.date().isoformat(), # Date only
+        "created_at": lambda dt: dt.isoformat(),         # Full ISO string
+        "updated_at": lambda dt: dt.isoformat(),         # Full ISO string
+        "last_view": lambda dt: dt.isoformat()           # Full ISO string
+    }
+    for field, formatter in datetime_fields_to_format.items():
+        if field in doc and isinstance(doc.get(field), datetime):
+            doc[field] = formatter(doc[field])
+
+    # Recursively process lists of dictionaries (e.g., embedded comments/replies if any)
+    for key, value in doc.items():
+        if isinstance(value, list):
+            new_list = []
+            for item in value:
+                if isinstance(item, dict):
+                    new_list.append(to_str_id(item.copy())) # Process a copy
+                else:
+                    new_list.append(item)
+            doc[key] = new_list
+        elif isinstance(value, dict): # Recursively process nested dictionaries
+            doc[key] = to_str_id(value.copy()) # Process a copy
+
     return doc
 
 ai_news_router = APIRouter(tags=["ai_news"])
@@ -1068,16 +1104,32 @@ async def toggle_comment_like(
         {"$inc": {"likes": inc_value}}
     )
     # Recupera il nuovo conteggio likes
-    updated = await db.ai_news_comments.find_one({"_id": ObjectId(comment_id)})
+    updated_comment_for_stats = await db.ai_news_comments.find_one({"_id": comment_oid}, {"likes_count": 1, "news_id": 1}) # Ensure news_id is projected
+    new_likes_count = updated_comment_for_stats.get("likes_count", 0)
+    # Ensure news_id for broadcast is from the authoritative source (the comment document itself)
+    news_id_for_broadcast = str(updated_comment_for_stats.get("news_id", target_comment["news_id"]))
+
+
     await broadcast_message(json.dumps({
-        "type": "comment:ai_news",
+        "type": "comment/like_update",
         "data": {
-            "ai_news_id": str(comment["news_id"]),
-            "comment_id": str(comment["_id"]),
-            "action": "like"
+            "news_id": news_id_for_broadcast,
+            "comment_id": comment_id,
+            "likes_count": new_likes_count,
         }
     }))
-    return {"liked": inc_value > 0, "likes": updated.get("likes", 0)}
+    # The HTTP response for the user who clicked the button
+    return request.app.state.templates.TemplateResponse(
+        "ai_news/_like_button_partial.html", # Render the button partial
+        {
+            "request": request,
+            "news_id": news_id_for_broadcast,
+            "comment_id": comment_id,
+            "likes_count": new_likes_count,
+            "user_has_liked": user_has_liked_now,
+            "current_user_id_str": str(current_user["_id"]) # For the macro context
+        }
+    )
 
 @ai_news_router.patch("/api/ai-news/comments/{comment_id}")
 async def update_comment(

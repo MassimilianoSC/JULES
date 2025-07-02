@@ -91,54 +91,6 @@ export default {
   // updateStats, // Rimosso dall'export pubblico, la gestione UI va a dom-renderer
 };
 
-async function bootstrapChat() {
-  try {
-    const response = await fetch(`/api/ai-news/${currentNewsId}/comments?since=0`);
-    if (!response.ok) throw new Error('Failed to fetch comments');
-    
-    const comments = await response.json();
-    
-    // Reality check: confronta il numero di commenti nel DOM con quelli nel DB
-    const domComments = document.querySelectorAll('.chat-message').length;
-    if (domComments !== comments.length) {
-      // Se c'è discrepanza, sostituisci completamente la lista
-      const commentsContainer = document.querySelector('#comments-container');
-      commentsContainer.innerHTML = ''; // Pulisci il contenitore
-      comments.forEach(comment => {
-        const commentElement = renderComment(comment);
-        commentsContainer.appendChild(commentElement);
-      });
-    }
-  } catch (error) {
-    console.error('Error during chat bootstrap:', error);
-  }
-}
-
-// Assicuriamoci che ogni delete emetta sempre l'evento WS
-async function deleteComment(commentId) {
-  try {
-    const response = await fetch(`/api/ai-news/comments/${commentId}`, {
-      method: 'DELETE'
-    });
-    
-    if (!response.ok) {
-      if (response.status === 404) {
-        // Se il commento non esiste più nel DB, rimuoviamolo comunque dal DOM
-        const commentElement = document.querySelector(`[data-comment-id="${commentId}"]`);
-        if (commentElement) {
-          commentElement.remove();
-        }
-      }
-      throw new Error('Failed to delete comment');
-    }
-
-    // Emettiamo sempre l'evento WS dopo una delete riuscita
-    ws.send(JSON.stringify({
-      type: 'comment/remove',
-      data: { commentId }
-    }));
-
-  } catch (error) {
-    console.error('Error deleting comment:', error);
-  }
-} 
+// Removed bootstrapChat and deleteComment functions from here as they are
+// either redundant or their responsibilities belong to other modules like
+// comment-manager.js (for API calls) or ws-handlers.js (for WS messages).

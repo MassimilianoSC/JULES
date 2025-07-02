@@ -225,19 +225,8 @@ export function initAiNews() {
 
 // Inizializzazione per una singola riga
 export function initAiNewsRow(newsId) {
-  // Inizializza i commenti per questa riga
-  const commentsToggle = document.querySelector(`#comments-${newsId} .comments-toggle`);
-  if (commentsToggle) {
-    commentsToggle.addEventListener('click', () => {
-      const commentsSection = document.getElementById(`comments-section-${newsId}`);
-      if (commentsSection.classList.contains('hidden')) {
-        commentsSection.classList.remove('hidden');
-        loadComments(newsId);
-      } else {
-        commentsSection.classList.add('hidden');
-      }
-    });
-  }
+  // Comment toggling is now handled by global event delegation in chat/comment-manager.js
+  // So, the specific listener for commentsToggle is removed from here.
 
   // Inizializza il form commenti
   const commentForm = document.querySelector(`#comment-form-${newsId}`);

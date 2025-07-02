@@ -67,11 +67,23 @@ document.addEventListener('click', e => {
       credentials: 'include'
     })
     .then(res => {
-      if (!res.ok) throw new Error(res.statusText);
+      if (!res.ok) {
+        // Try to get a more specific error message from backend if available (e.g., JSON response)
+        return res.text().then(text => { throw new Error(text || res.statusText); });
+      }
+      // No specific content needed on successful (204 No Content) delete usually
+      // The DOM removal is handled by WebSocket event 'comment/delete' via ws-handlers.js -> chat:dom:remove
+      log.info(`Commento ${commentId} eliminato (richiesta inviata). L'UI si aggiornerà tramite WebSocket.`);
+      // Optionally, show a temporary success toast here if immediate feedback is desired before WS event
+      // showToast({ title: "Commento", body: "Commento eliminato con successo.", type: "success" });
     })
     .catch(e => {
-      log.error('Errore durante il tentativo di eliminazione del commento:', { commentId, newsId, error: e });
-      alert('Errore durante l\'eliminazione del commento.');
+      log.error('Errore durante il tentativo di eliminazione del commento:', { commentId, newsId, error: e.message });
+      if (typeof showToast === "function") {
+        showToast({ title: "Errore Eliminazione", body: `Impossibile eliminare il commento: ${e.message}`, type: "error" });
+      } else {
+        alert(`Errore durante l'eliminazione del commento: ${e.message}`);
+      }
     });
     return;
   }
@@ -105,56 +117,82 @@ function toggleComments(newsId) {
 
 function loadComments(newsId) {
   log.info(`Caricamento commenti per newsId: ${newsId}`);
-  // Prima carichiamo le statistiche
+  const commentsList = document.querySelector(`#comments-list-${newsId}`);
+  const commentsContainer = document.querySelector(`#comments-container-${newsId}`);
+
+  if (!commentsList && commentsContainer) {
+    // If the specific list isn't there but the main container is, it might be okay if HTMX loads the list structure.
+    // For now, assume #comments-list-newsId is the direct target for JS rendering.
+    log.error(`Elemento lista commenti #comments-list-${newsId} non trovato.`);
+    // Optionally, show an error in the UI here.
+    // For example: commentsContainer.innerHTML = '<p class="text-red-500">Errore: Impossibile caricare l\'area commenti.</p>';
+    return;
+  }
+  if (!commentsList && !commentsContainer){
+    log.error(`Contenitori commenti #comments-container-${newsId} e #comments-list-${newsId} non trovati.`);
+    return;
+  }
+
+  // Show loading indicator
+  if(commentsList) commentsList.innerHTML = '<p class="text-gray-500 p-4 text-center">Caricamento commenti...</p>';
+
+
+  // Prima carichiamo le statistiche (questo potrebbe essere separato o combinato)
   fetch(`/api/ai-news/${newsId}/stats`)
     .then(response => {
-      if (!response.ok) throw new Error(`Errore HTTP stats: ${response.status}`);
+      if (!response.ok) throw new Error(`Errore HTTP stats: ${response.status} ${response.statusText}`);
       return response.json();
     })
     .then(stats => {
       log.debug(`Statistiche ricevute per ${newsId}:`, stats);
-      const badge = document.querySelector(`#comments-badge-${newsId}`);
+      // Update stats display (e.g., badge count) - this might be handled by other dedicated functions too
+      const badge = document.querySelector(`#comments-count-${newsId}`); // Assuming the comment count span has this ID now
       if (badge) {
-        badge.textContent = stats.comments;
-        badge.classList.toggle('hidden', stats.comments === 0);
+        badge.textContent = stats.comments || 0;
       }
+      // Fetch actual comments
       log.debug(`Caricamento commenti effettivi per ${newsId}...`);
-      return fetch(`/api/ai-news/${newsId}/comments`);
+      return fetch(`/api/ai-news/${newsId}/comments`); // This API endpoint should return the list of comments
     })
     .then(response => {
-      if (!response.ok) throw new Error(`Errore HTTP commenti: ${response.status}`);
-      return response.json();
+      if (!response.ok) throw new Error(`Errore HTTP commenti: ${response.status} ${response.statusText}`);
+      return response.json(); // Expects { items: [], total_count: N, has_more: bool }
     })
     .then(data => {
       log.debug(`Commenti ricevuti per ${newsId}:`, data.items?.length || 0);
-      const commentsList = document.querySelector(`#comments-list-${newsId}`);
-      if (!commentsList) {
-        log.error(`Elemento lista commenti #comments-list-${newsId} non trovato.`);
+      if (!commentsList) return; // Guard clause if still not found (should not happen if check above is robust)
+
+      commentsList.innerHTML = ''; // Clear loading message or old comments
+
+      if (!data.items || data.items.length === 0) {
+        commentsList.innerHTML = '<p class="text-gray-500 p-4 text-center">Nessun commento ancora.</p>';
         return;
       }
-      commentsList.innerHTML = '';
+
       const currentUserId = window.currentUserId || (chatState.state.user ? chatState.state.user._id : null);
       const currentUserRole = window.currentUserRole || (chatState.state.user ? chatState.state.user.role : null);
 
       data.items.forEach(comment => {
-        // Assumiamo che 'newsId' sia disponibile in questo scope
-        // e che 'user' (l'utente loggato) sia accessibile globalmente o tramite chatState
         const commentElement = buildCommentElement(comment, newsId, currentUserId, currentUserRole);
         commentsList.appendChild(commentElement);
       });
 
-      // La gestione dei listener per i pulsanti (like, reply, delete) ora dovrebbe essere centralizzata
-      // o gestita tramite delega eventi sull'elemento `commentsList` o un suo genitore,
-      // invece di riattaccarli qui. Per ora, questa parte è omessa, assumendo che
-      // il listener globale in questo file o la logica in dom-renderer/index gestirà i click.
-      // Se i pulsanti like usano HTMX (come in _comment_item.html), HTMX li gestirà automaticamente.
-      // Per i pulsanti reply e delete che usano data-attributes, il listener delegato esistente
-      // in questo file dovrebbe continuare a funzionare.
+      // Handle "load more" button if present and `data.has_more` is true
+      // (This logic would typically be in the template or handled by HTMX itself if API returns next page link)
     })
     .catch(error => {
-      log.error('Errore nel caricamento dei commenti:', { newsId, error });
-      // TODO: Mostrare un messaggio di errore all'utente nell'UI, es. con un toast
-      // showToast({ title: "Errore Chat", body: "Impossibile caricare i commenti.", type: "error" });
+      log.error('Errore nel caricamento dei commenti:', { newsId, error: error.message });
+      if (commentsList) {
+        commentsList.innerHTML = '<p class="text-red-500 p-4 text-center">Impossibile caricare i commenti. Riprova più tardi.</p>';
+      }
+      // Use the global showToast for user feedback
+      // Ensure showToast is imported or available globally if used here.
+      // For now, assuming it's available via other imports or global scope.
+      if (typeof showToast === "function") {
+        showToast({ title: "Errore Chat", body: "Impossibile caricare i commenti.", type: "error" });
+      } else {
+        console.warn("showToast function not available for error display in comment-manager.")
+      }
     });
 }
 

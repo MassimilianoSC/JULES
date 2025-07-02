@@ -72,30 +72,40 @@ eventBus.on('ws:ai-news', p => { // p è il payload del messaggio WebSocket
         }
         break;
 
-      case 'like': // p dovrebbe essere { type: 'like', newsId: ..., commentId: ..., likes: [...] }
-        if (p.newsId && p.commentId && Array.isArray(p.likes)) {
-            chatState.updateLike(p.commentId, p.likes);
-            eventBus.emit('chat:dom:update-like', {
-              id   : p.commentId,
-              likes: p.likes.length,
-              mine : p.likes.includes(window.currentUserId),
-              newsId: p.newsId // Aggiunto newsId
+      case 'comment/like_update': // Handles the new event from backend
+        // Expected p.data: { news_id, comment_id, likes_count }
+        if (p.data && p.data.news_id && p.data.comment_id && typeof p.data.likes_count !== 'undefined') {
+            // Update local chat state - chatState.updateLike might need adjustment
+            // if it expects a full list of likers instead of just the count.
+            // For now, let's assume we primarily update the DOM via an event.
+            // The user who performed the action already got an HTTP response to update their like button state.
+            // This WS message is mainly for other users to see the count change.
+
+            // chatState.updateLike(p.data.comment_id, p.data.likes_count); // This would need chatState to be adapted
+
+            eventBus.emit('chat:dom:update_like', {
+              newsId: p.data.news_id,
+              commentId: p.data.comment_id,
+              likesCount: p.data.likes_count
+              // isLikedByCurrentUser is not sent via WS for other users,
+              // their like button state (visual fill) won't change unless they also liked it.
             });
         } else {
-            console.error('[ws-handlers] Payload like malformato:', p);
+            console.error('[ws-handlers] Payload comment/like_update malformato:', p.data);
         }
         break;
 
-      case 'typing': // p dovrebbe essere { type: 'typing', newsId: ..., userId: ..., isTyping: true/false }
-        if (p.newsId && p.userId !== undefined && p.isTyping !== undefined) {
-            chatState.setTyping(p.userId, p.isTyping);
+      case 'typing': // p.data dovrebbe essere { newsId: ..., userId: ..., userName: ..., isTyping: true/false }
+        if (p.data && p.data.newsId && p.data.userId !== undefined && p.data.isTyping !== undefined && p.data.userName) {
+            chatState.setTyping(p.data.userId, p.data.isTyping); // Assuming setTyping stores based on userId
             eventBus.emit('chat:dom:typing', {
-              userId : p.userId,
-              isTyping: p.isTyping,
-              newsId: p.newsId // Aggiunto newsId
+              newsId: p.data.newsId,
+              userId : p.data.userId,
+              userName: p.data.userName, // Pass userName for display
+              isTyping: p.data.isTyping
             });
         } else {
-            console.error('[ws-handlers] Payload typing malformato:', p);
+            console.error('[ws-handlers] Payload typing malformato:', p.data);
         }
         break;
 

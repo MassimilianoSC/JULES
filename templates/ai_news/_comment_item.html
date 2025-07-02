@@ -33,20 +33,8 @@
 
         <!-- Footer / Azioni -->
         <div class="mt-2 flex items-center space-x-4 text-sm">
-            <!-- Pulsante Like (HTMX) -->
-            <button
-                class="flex items-center space-x-1 text-gray-500 hover:text-blue-600 transition-colors"
-                hx-post="/api/ai-news/{{ news_id }}/comments/{{ comment_id }}/like" {# Assumendo che news_id sia disponibile nel contesto #}
-                hx-target="this" {# Aggiorna solo il pulsante stesso o una sua parte #}
-                hx-swap="outerHTML" {# O un swap più mirato se il backend restituisce solo il conteggio/stato #}
-                data-comment-id="{{ comment_id }}"
-                data-liked="{{ 'true' if comment.user_has_liked else 'false' }}" {# Da verificare se user_has_liked è nel comment object #}
-            >
-                <svg class="w-4 h-4" fill="{{ 'currentColor' if comment.user_has_liked else 'none' }}" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path>
-                </svg>
-                <span class="like-count">{{ comment.likes | default(0) }}</span> {# comment.likes dovrebbe essere il conteggio numerico #}
-            </button>
+            {% import "ai_news/_like_button_partial.html" as like_button_macros %}
+            {{ like_button_macros.like_button(news_id=news_id, comment_id=comment_id, likes_count=(comment.likes_count | default(0)), user_has_liked=comment.user_has_liked, current_user_id_str=current_user_id) }}
 
             {% if not comment.parent_id %} {# Mostra "Rispondi" solo per commenti, non per risposte (o gestisci diversamente) #}
             <button
