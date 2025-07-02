@@ -1,0 +1,75 @@
+<h1 class="mb-10 text-center text-3xl font-bold text-slate-800">
+  Nuova AI news
+</h1>
+
+<form action="/ai-news/upload"
+      method="post"
+      enctype="multipart/form-data"
+      class="mx-auto grid max-w-lg gap-6"
+      hx-post="/ai-news/upload"
+      hx-encoding="multipart/form-data" {# Important for file uploads with HTMX #}
+      hx-swap="none">
+  <!-- Titolo -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="title_ai_news_new">Titolo</label>
+    <input required name="title" id="title_ai_news_new" type="text" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+  </div>
+
+  <!-- Categoria -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="category_ai_news_new">Categoria</label>
+    <select required name="category" id="category_ai_news_new" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+      <option value="">Seleziona una categoria</option>
+      <option value="generic">Generica</option>
+      <option value="business">Aziendale</option>
+      <option value="technical">Tecnica</option>
+      <option value="other">Altro</option>
+    </select>
+  </div>
+
+  <!-- File -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="file_ai_news_new">File</label>
+    <input name="file" id="file_ai_news_new" type="file" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition">
+    <p class="text-xs text-slate-500 mt-1">Carica un file oppure fornisci un URL esterno. Almeno un'opzione è richiesta.</p>
+  </div>
+
+  <!-- External URL -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="external_url_ai_news_new">URL Esterno (alternativo al file)</label>
+    <input name="external_url" id="external_url_ai_news_new" type="url" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" placeholder="https://...">
+  </div>
+
+  <!-- Tags -->
+  <div class="grid gap-2">
+    <label class="text-sm font-medium text-slate-700" for="tags_ai_news_new">Tags (separati da virgola)</label>
+    <input name="tags" id="tags_ai_news_new" type="text" class="block w-full rounded-lg border border-slate-200 px-4 py-3 text-base focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 transition" placeholder="es. Python, Tutorial, Framework">
+  </div>
+
+  <!-- ░░ Destinatario ░░ -->
+  <fieldset class="grid gap-4 border border-slate-300 rounded-lg p-4">
+    <legend class="px-2 text-sm font-semibold text-slate-600">Destinatario</legend>
+    {# Ensure this component provides unique IDs if used multiple times on a page or in modals #}
+    {% include "components/branch_and_hire_selects.html" with { "id_prefix": "ai_news_new" } %}
+  </fieldset>
+
+  <!-- Evidenza in home -->
+  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+    <input type="checkbox" id="show_on_home_ai_news_new" name="show_on_home" value="true" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+    Metti in evidenza sulla home
+  </label>
+
+  <div class="flex gap-4 justify-end pt-4">
+    <button type="button"
+            data-close-modal
+            class="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-6 py-2
+                   text-sm font-medium text-slate-700 shadow hover:bg-slate-200 transition">
+      Annulla
+    </button>
+    <button type="submit"
+            class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-6 py-2
+                   text-sm font-medium text-white shadow hover:bg-blue-700 transition">
+      Salva
+    </button>
+  </div>
+</form>
