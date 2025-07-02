@@ -214,8 +214,9 @@ function initializeChat(newsId) {
         currentNewsId = null; // Invalida se il contenitore non è pronto
         return;
     }
-    commentsWrap.innerHTML = ''; // Pulisci da commenti precedenti
-    log.debug(`Contenitore commenti per ${currentNewsId} pulito.`);
+    // commentsWrap.innerHTML = ''; // NON pulire. Il wrapper contiene già la struttura statica (form, lista).
+    // La logica di loadComments in comment-manager.js pulirà specificamente la comments-list.
+    log.debug(`Contenitore commenti per ${currentNewsId} identificato.`);
 
     const typingIndicatorSelector = `#typing-indicator-${currentNewsId}`;
     typingIndicatorEl = qs(typingIndicatorSelector);
@@ -347,22 +348,31 @@ bus.on('chat:dom:add', ({ commentData, newsId: eventNewsId }) => {
 
 /* ------- AGGIORNAMENTO LIKE (ESEMPIO - da implementare completamente) ------- */
 // payload: { commentId, newsId: eventNewsId, likesCount, isLikedByCurrentUser }
-bus.on('chat:dom:update_like', ({ commentId, newsId: eventNewsId, likesCount, isLikedByCurrentUser }) => {
-    if (eventNewsId !== currentNewsId || !commentsWrap) return;
+bus.on('chat:dom:update_like', ({ commentId, newsId: eventNewsId, likesCount }) => { // isLikedByCurrentUser removed from WS payload for others
+    if (eventNewsId !== currentNewsId || !commentsWrap) {
+        log.debug(`chat:dom:update_like for news ${eventNewsId} (comment ${commentId}) ignored. Active: ${currentNewsId}`);
+        return;
+    }
+    log.debug(`chat:dom:update_like: Updating like count for comment ${commentId} in news ${eventNewsId} to ${likesCount}`);
 
     schedule(() => {
         const commentNode = qs(`#comment-${commentId}`, commentsWrap);
-        if (!commentNode) return;
+        if (!commentNode) {
+            log.warn(`Comment node #comment-${commentId} not found for like update.`);
+            return;
+        }
 
         const likeCountSpan = commentNode.querySelector('.like-count');
-        if (likeCountSpan) likeCountSpan.textContent = likesCount;
-
-        const likeButton = commentNode.querySelector('.like-btn');
-        if (likeButton) {
-            likeButton.classList.toggle('text-blue-600', isLikedByCurrentUser); // Esempio di stile per like attivo
-            likeButton.classList.toggle('text-gray-500', !isLikedByCurrentUser);
-            // Potrebbe essere necessario aggiornare anche l'icona SVG se cambia (es. da outline a solid)
+        if (likeCountSpan) {
+            likeCountSpan.textContent = likesCount;
+        } else {
+            log.warn(`.like-count span not found in comment ${commentId}.`);
         }
+
+        // The visual state of the like button (e.g., filled icon, color) for other users
+        // is not changed here, as that depends on their own like status.
+        // Only the count is updated for everyone.
+        // The user who clicked the button should have their button updated by the HTTP response of the like action.
     });
 });
 

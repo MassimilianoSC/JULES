@@ -50,7 +50,12 @@ export function initAiNewsChat() {
   document.querySelectorAll('[data-reply-btn]').forEach(btn => {
     btn.addEventListener('click', () => {
       const commentId = btn.dataset.commentId;
-      showReplyForm(commentId);
+      const newsId = btn.closest('[data-news-id]')?.dataset.newsId || btn.dataset.newsId; // Try to get newsId from button or a parent
+      if (!newsId) {
+        console.error("newsId not found for reply button for comment:", commentId);
+        return;
+      }
+      showReplyForm(commentId, newsId);
     });
   });
 }
