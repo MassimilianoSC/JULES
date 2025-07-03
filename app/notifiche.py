@@ -266,6 +266,14 @@ async def notifiche_count_link(request: Request, user=Depends(get_current_user))
         "$or": get_emp_type_conditions(employment_type)
     }
     count = await db.notifiche.count_documents(q)
+    # NOTA PER LO SVILUPPATORE:
+    # L'elemento HTML che effettua la chiamata hx-get a questo endpoint
+    # (e che quindi carica il partial "components/nav_links_badge.html")
+    # dovrebbe avere attributi hx-trigger simili a:
+    # hx-trigger="load, notifications.refresh from:body, refreshLinkBadgeEvent from:body"
+    # Questo assicurerà che il badge si aggiorni al caricamento della pagina,
+    # quando un evento 'notifications.refresh' viene emesso globalmente (es. dopo un toast),
+    # e quando l'evento 'refreshLinkBadgeEvent' viene emesso (es. dopo aver visitato /links).
     return request.app.state.templates.TemplateResponse(
         "components/nav_links_badge.html",
         {"request": request, "unread_links_count": "" if count == 0 else count, "u": user} # Corretto: unread_links_count

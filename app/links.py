@@ -124,27 +124,35 @@ async def list_links(request: Request, current_user=Depends(get_current_user)):
     employment_type = current_user.get("employment_type")
     branch = current_user.get("branch")
     print(f"[DEBUG] Utente corrente: {current_user}")
-    if current_user["role"] == "admin" or not employment_type:
+    if current_user["role"] == "admin" or not employment_type: # Admin vede tutto, utente senza employment_type definito vede tutto (da rivedere se corretto)
         mongo_filter = {}
     else:
+        # Condizioni per employment_type del link
+        # Il link è visibile se:
+        # 1. Il suo campo employment_type non esiste (è per tutti i tipi di impiego)
+        # 2. Il suo campo employment_type è una lista vuota (è per tutti i tipi di impiego)
+        # 3. Il suo campo employment_type (che è una lista) contiene "*" (è per tutti i tipi di impiego)
+        # 4. Il suo campo employment_type (che è una lista) contiene il tipo di impiego specifico dell'utente
+        employment_type_conditions = [
+            {"employment_type": {"$exists": False}},
+            {"employment_type": []},
+            {"employment_type": {"$in": ["*", employment_type]}} # employment_type è la stringa dell'utente
+        ]
+
         mongo_filter = {
             "$and": [
                 {
                     "$or": [
-                        {"branch": "*"},
-                        {"branch": branch}
+                        {"branch": "*"}, # Link per tutte le branch
+                        {"branch": branch}  # Link per la branch specifica dell'utente
                     ]
                 },
                 {
-                    "$or": [
-                        {"employment_type": {"$elemMatch": {"$in": [employment_type, "*"]}}},
-                        {"employment_type": {"$exists": False}},
-                        {"employment_type": []}
-                    ]
+                    "$or": employment_type_conditions
                 }
             ]
         }
-    print(f"[DEBUG] Filtro Mongo: {mongo_filter}")
+    print(f"[DEBUG] Filtro Mongo per list_links: {mongo_filter}")
     links = await db.links.find(mongo_filter).to_list(length=None)
     print(f"[DEBUG] Link trovati: {[l.get('title') for l in links]}")
 
@@ -252,6 +260,11 @@ async def delete_link(request: Request, link_id: str, current_user: dict = Depen
 
     # Esegui l'eliminazione
     await db.links.delete_one({"_id": object_id_to_delete})
+
+    # Elimina le notifiche associate a questo link
+    # Questo aiuta a mantenere il conteggio dei badge accurato dopo l'eliminazione di un link.
+    delete_notifiche_result = await db.notifiche.delete_many({"id_risorsa": link_id, "tipo": "link"})
+    print(f"[DEBUG] Eliminate {delete_notifiche_result.deleted_count} notifiche associate al link {link_id}")
     
     # 1. Notifica WebSocket SOLO ai destinatari
     payload = create_action_notification_payload(
@@ -411,27 +424,30 @@ async def list_links_partial(request: Request, current_user=Depends(get_current_
     employment_type = current_user.get("employment_type")
     branch = current_user.get("branch")
     
-    if current_user["role"] == "admin" or not employment_type:
+    if current_user["role"] == "admin" or not employment_type: # Admin vede tutto, utente senza employment_type definito vede tutto (da rivedere se corretto)
         mongo_filter = {}
     else:
+        # Condizioni per employment_type del link (identiche a list_links)
+        employment_type_conditions = [
+            {"employment_type": {"$exists": False}},
+            {"employment_type": []},
+            {"employment_type": {"$in": ["*", employment_type]}} # employment_type è la stringa dell'utente
+        ]
+
         mongo_filter = {
             "$and": [
                 {
                     "$or": [
-                        {"branch": "*"},
-                        {"branch": branch}
+                        {"branch": "*"}, # Link per tutte le branch
+                        {"branch": branch}  # Link per la branch specifica dell'utente
                     ]
                 },
                 {
-                    "$or": [
-                        {"employment_type": {"$elemMatch": {"$in": [employment_type, "*"]}}},
-                        {"employment_type": {"$exists": False}},
-                        {"employment_type": []}
-                    ]
+                    "$or": employment_type_conditions
                 }
             ]
         }
-    
+    print(f"[DEBUG] Filtro Mongo per list_links_partial: {mongo_filter}")
     links = await db.links.find(mongo_filter).to_list(length=None)
     
     return request.app.state.templates.TemplateResponse(
